@@ -27,6 +27,8 @@ ljones@astro.washington.edu
 
 import os
 import warnings
+import subprocess
+import shlex
 from copy import deepcopy
 import numpy
 
@@ -39,7 +41,7 @@ class ModtranCards:
         self.paramValues = None
         return
 
-    def makeCard(self):
+    def setDefaults(self):
         self.readCardTemplate()
         self.readParameterFormats()
 
@@ -79,7 +81,7 @@ class ModtranCards:
             values = line.split()
             paramName = values[0]
             self._paramFormats[paramName] = {}
-            self._paramFormats[paramName]['outputLine'] = values[1]
+            self._paramFormats[paramName]['outputLine'] = int(values[1])
             self._paramFormats[paramName]['format'] = values[2]
             if self._paramFormats[paramName]['format'].endswith('d'):
                 self._paramFormats[paramName]['type'] = int
@@ -87,8 +89,8 @@ class ModtranCards:
                 self._paramFormats[paramName]['type'] = float
             else:
                 self._paramFormats[paramName]['type'] = str
-            self._paramFormats[paramName]['startChar'] = values[3]
-            self._paramFormats[paramName]['endChar'] = values[4]
+            self._paramFormats[paramName]['startChar'] = int(values[3])
+            self._paramFormats[paramName]['endChar'] = int(values[4])
         file.close()
         # _paramFormats is a dictionary, where each entry is keyed to a parameter that can be changed in the
         # .tp5 file. Each dictionary entry is itself a dictionary, storing the line ('outputLine') in the MODTRAN
@@ -96,10 +98,9 @@ class ModtranCards:
         #  'endChar') and the data format ('format', although we only use the data type currently). 
         return 
 
-    def readParamValues(self, parameterfile):
-        """Read the parameters from a file.
-        Provided for backward compatibility or running outside the catalogs framework.
-        Otherwise, would just expect a dictionary of parameter values to be given to writeModtranInput directly."""
+    def readParamValues_M(self, parameterfile):
+        """Read the parameters from a file (with Michel's input format, 'id $ key = value $ ... ').
+        Provided for backward compatibility & testing purposes mainly. """
         file = open(parameterfile, 'r')
         # Save the parameter values to a list of dictionaries, because there will likely be more than one MODTRAN 'run'
         #  to be generated if running in this manner. 
@@ -110,7 +111,7 @@ class ModtranCards:
             #  on either side of entries like 'ID85144469 $ expMJD = 49353.165757 $ fieldRA = 0.793502 $ fi ..'
             tmpvalues = line.split('$')
             # The first item is the observation ID name
-            # paramValuesDict['id'] = tmpvalues[0].strip() # not using for modtran card
+            paramValuesDict['id'] = tmpvalues[0].strip() 
             # The other values are keyword-value pairs.
             for i in range(1, len(tmpvalues)):
                 # Avoid entries which aren't actually key-value pairs (like the newline at the end of the line)
@@ -123,19 +124,50 @@ class ModtranCards:
             # Then add this dictionary to the list.
             paramValuesList.append(paramValuesDict)
         return paramValuesList
-         
-    def _validateParamValues(self, paramValueDict):
+
+    def readParamValues_F(self, parameterfile):
+        """Read the parameters from a flat file format (file headers, then values in each column).
+        Provided for backward compatibility & testing purposes mainly.  """
+        file = open(parameterfile, 'r')
+        # Save the parameter values to a list of dictionaries.
+        paramValuesList = []
+        keys = None
+        for line in file:
+            if line.startswith('#'):
+                # This is the header line, so get the dictionary key names.
+                line = line.lstrip('#')
+                keys = line.split()
+                continue
+            if keys == None:
+                raise Exception('Could not get dictionary keys from file header line (%s)' %(line))
+            paramValuesDict = {}
+            values = line.split()
+            for k, i in zip(keys, len(keys)):
+                paramValuesDict[k] = values[i]
+            paramValuesList.append(paramValuesDict)
+        return paramValuesList
+                 
+    def _validateParamValues(self, paramValuesDict):
         """Given a dictionary of parameters which will be changed for the modtran card,
         validate against format file and store in class."""
         keys_used = []
-        for parname in paramValuedict.keys():            
-            if (parname in self._paramFormats)==False:
-                raise warnings.warn('Found unknown parameter %s in provided run parameter file, will skip.' %(parname))
-            else:
+        # Check what keys are in dictionary that we should use.
+        for parname in paramValuesDict.keys():
+            if parname in self._paramFormats.keys():
+                # Add to list of parameters to put into input card.
                 keys_used.append(parname)
+                # And convert to appropriate type.
+                paramValuesDict[parname] = self._paramFormats[parname]['type'](paramValuesDict[parname])
         return keys_used
 
-    def writeModtranInput(paramValues, outputfile='tmp.tp5'):
+    def _printCards(self, runCards):
+        "Pretty print the cards to the screen for debugging."""
+        for run in runCards:
+            for card in run:
+                print card.rstrip()
+        return
+
+    def writeModtranCards(self, paramValues, outfileRoot='tmp'):
         """Write the modtran run card to disk.
         Parameter values can be provided in a single dictionary, or as a list of dictionaries (for multiple runs)."""
         # If paramValues was a single dictionary, let's just turn it into a list so we can iterate
@@ -153,6 +185,8 @@ class ModtranCards:
         continuation_cardvalue = numpy.ones(len(paramValues), 'int')
         continuation_cardvalue[len(continuation_cardvalue)-1] = 0
         continuation_cardline = len(self._cardTemplate) - 1
+        # We want to write the location of the MODTRAN DATA files into the input file, so let's figure that out.
+        modtranDataDir = os.getenv('MODTRAN_DATADIR')        
         # Go through each 'run', combining the input cards into one big file.
         irun = 0
         allcards = []
@@ -160,35 +194,54 @@ class ModtranCards:
             # Validate the dictionary contains only parameters we can understand.
             paramkeys = self._validateParamValues(paramValuesDict)
             # Set up the base modtran run input values.
-            card = deepcopy(self._cardTemplate)
+            card = deepcopy(self._cardTemplate)            
             # Go through parameter key/values that we know how to use in modtran file, add to input file.
             for k in paramkeys:
-                # Convert string value to float or int if needed.
-                parval = self.paramFormats[k]['type'](paramValuesDict[k])
                 line = self._paramFormats[k]['outputLine']
                 # Insert into appropriate card.
-                card[line] = card[line][0:(self._paramFormats[k]['startChar'])] + \
-                    self._paramFormats[k]['format'] %(parval) + \
+                card[line] = card[line][0:(self._paramFormats[k]['startChar']-1)] + \
+                    self._paramFormats[k]['format'] %(paramValuesDict[k]) + \
                     card[line][(self._paramFormats[k]['endChar']):]
+            # Change modtran Data Dir
+            card[2] = modtranDataDir + '\n'
+            # Add continuation card value.
+            card[continuation_cardline] = card[continuation_cardline][:4] + '%d' %(continuation_cardvalue[irun]) + \
+                card[continuation_cardline][5:]            
             # Add Card2A and/or Card 2B if needed, inserting into the input file at line ('rank') 6
             # And add these lines into the modtran input file at line ('rank') 6
             line_add = 6
-            if (paramValuesDict['IHAZE'] > 0) and (paramValuesDict['ICLD'] > 0):
-                # Insert card 2A 
-                card = card[:line_add] + card2A + card[line_add:]
-                line_add += 1
-            if (paramValuesDict['IHAZE'] > 0) and (paramValuesDict['IVSA'] > 0):
-                card = card[:line_add] + card2B + card[line_add:]
-            # Add continuation card value.
-            card[continuation_cardline] = card[continuation_cardline][:4] + continuation_cardvalue[irun] + \
-                card[continuation_cardline][5:]            
-            irun += 1
+            if paramValuesDict['IHAZE'] > 0 :
+                if paramValuesDict['ICLD'] > 0 :
+                    # Insert card 2A
+                    card = card[:line_add] + card2A + card[line_add:]
+                    line_add += 1
+                if paramValuesDict['IVSA'] > 0:
+                    card = card[:line_add] + card2B + card[line_add:]
             # Add new card into entire list. 
+            irun += 1
             allcards.append(card)
-        # Write cards to output. 
-        file = open(outputfile, 'w')
-        for line in allcards:
-            print >>file, line
+            #self._printCards(allcards)
+        # Write data to output. 
+        file = open(outfileRoot+'.tp5', 'w')
+        for run in allcards:
+            for card in run:
+                file.write(card)
         file.close()
         return
-    
+
+    def runModtran(self, outfileRoot='tmp'):
+        """Spawn a shell process to run MODTRAN on the input file in outfileRoot. """
+        # Get name of command.
+        modtranExecutable = os.getenv('MODTRAN_EXECUTABLE')
+        args = shlex.split(modtranExecutable)
+        # Write name of modtran .tp5 file to run, and put into mod5root.in input file.
+        file = open('mod5root.in', 'w')
+        print >>file, outfileRoot
+        file.close()
+        # Run modtran.        
+        errcode = subprocess.check_call(args)
+        print errcode
+        if errcode != 0:
+            raise Exception('Modtran run on %s did not complete properly.' %(outfileRoot))
+        return 
+        
