@@ -123,6 +123,7 @@ class ModtranCards:
                 paramValuesDict[parname] = parvalue
             # Then add this dictionary to the list.
             paramValuesList.append(paramValuesDict)
+        file.close()
         return paramValuesList
 
     def readParamValues_F(self, parameterfile):
@@ -145,6 +146,7 @@ class ModtranCards:
             for k, i in zip(keys, len(keys)):
                 paramValuesDict[k] = values[i]
             paramValuesList.append(paramValuesDict)
+        file.close()
         return paramValuesList
                  
     def _validateParamValues(self, paramValuesDict):
