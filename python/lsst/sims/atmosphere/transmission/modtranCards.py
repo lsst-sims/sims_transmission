@@ -240,8 +240,22 @@ class ModtranCards:
         file.close()
         # Run modtran.        
         errcode = subprocess.check_call(args)
-        print errcode
         if errcode != 0:
             raise Exception('Modtran run on %s did not complete properly.' %(outfileRoot))
         return 
         
+    def cleanModtran(self, outfileRoot='tmp'):
+        """Spawn a shell process to clean up all modtran files starting with outfileRoot."""
+        # MODTRAN suffixes:
+        suffixes = ['.tp5', '.tp7', '.7sc', '.psc', '.plt']
+        deleteFiles = []
+        for s in suffixes:
+            deleteFiles.append(outfileRoot + s)
+        deleteFiles.append('mod5root.in')
+        command = '/bin/rm '
+        for d in deleteFiles:
+            command = command + d + ' '
+        args = shlex.split(command)
+        subprocess.check_call(args)
+        return
+                              

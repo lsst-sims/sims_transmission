@@ -1,5 +1,6 @@
 import os
 import lsst.sims.atmosphere.transmission.modtranCards as mc
+import lsst.sims.catalogs.measures.photometry.Bandpass as bp
 
 # Instantiate object
 m = mc.ModtranCards()
@@ -19,10 +20,17 @@ print paramList
 #    print run['ICLD']
 
 # Write modtran input cards
-m.writeModtranCards(paramList, 'tmp2')
+m.writeModtranCards(paramList[0], 'tmp2')
 
 # Run modtran on this file.
 m.runModtran('tmp2')
+
+atm = bp.Bandpass()
+atm.readThroughput('tmp2.psc')
+pylab.plot(atm.wavelen, atm.sb, 'b-')
+pylab.show()
+
+m.cleanModtran('tmp2')
 
 exit()
 
