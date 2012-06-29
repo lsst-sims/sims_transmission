@@ -20,9 +20,10 @@ of the opsim file and the number of lines of the catalog
   - Then I compute the values for each pointing by calling the appropriate
 function of the Atmosphere class
 
-I added a possibility to input a second catalog of opsim visits to be able
-to compare two different pointing strategies for a given simulated atmosphere.
-
+6/29/12
+- Possibility to input a list of opsim dictionary visits instead of an opsim_file
+- checkOpsimData() to check whether the input data has no bug
+- changeOpsimData(filename or data) to change input opsim data without creating a new class
 """
 
 import numpy as np
@@ -35,7 +36,7 @@ rad2dec = 180. / np.pi
 deg2rad = 1./rad2dec
 
 
-class AtmosphereSequences(object):
+class AtmosphereSequence(object):
     """This class is used to generate sequences of atmospheric parameters,
     matching long-term weather trends, and accounting for the airmass/pointing
     location of each observation. These atmospheric parameters are the
@@ -47,14 +48,14 @@ class AtmosphereSequences(object):
     #_modtran_keys = ['O3', 'H2O', 'IHAZE', 'ISEAS', 'IVULC', 'ICLD', 'IVSA', 'VIS',
     #               'ZAER11', 'ZAER12', 'SCALE1', 'ZAER21', 'ZAER22', 'SCALE2']
     
-    def __init__(self, opsim_name, opsim_name_add=None):
+    def __init__(self, opsim_filename=None, opsim_data=None):
         """Instantiate an AtmosphereSequences object.
         """
-        self.opsim_name = opsim_name
-        self.opsim_name_add = opsim_name_add
+        self.opsim_filename = opsim_filename
+        self.opsim_data = opsim_data
         self.opsim_visits = []
         self.modtran_visits = []
-        # individual modtran visit = dictionary with necessary keys
+        
         self._initialized_visits = False
         self._initialized_sequence = False
         
@@ -65,66 +66,84 @@ class AtmosphereSequences(object):
             self.modtran_visits[i][key] = value
         """
         
-    def readOpsimFile(self):
+    def readOpsimData(self):
         """Read the pointing file and return the content as a list
         of dictionaries called opsim_visits. The dictionary keys are
         stored in class variable_opsim_keys.
         """
-        if self.opsim_name == None:
-            raise Exception('Pointing filename not defined')
-        dataDir = os.getenv('LSST_POINTING_DIR')
-        if dataDir == None:
-            raise Exception('LSST_POINTING_DIR env not set')
-        opsimfile = os.path.join(dataDir, self.opsim_name)
-        # Read the file, store the info.
-        opsim = open(opsimfile, 'r')
-        for visit in opsim:
-            if visit.startswith('o'):
-                print visit
-                continue
-            data = visit.strip().split()
-            visitDict = {}
-            visitDict[_opsim_keys[0]] = int(data[0])
-            for i in xrange(1,len(data)):
-                visitDict[_opsim_keys[i]] = float(data[i])
-            self.opsim_visits.append(visitDict)
-        opsim.close()
+        if self.opsim_data:
+            good, string = self.checkOpsimData()
+            if good:
+                self.opsim_visits = self.opsim_data
+                self._initialized_visits = True
+            else:
+                raise Exception(string)
+        elif self.opsim_filename:
+            dataDir = os.getenv('LSST_POINTING_DIR')
+            if dataDir == None:
+                raise Exception('LSST_POINTING_DIR env not set')
+            opsimfile = os.path.join(dataDir, self.opsim_name)
+            # Read the file, store the info.
+            with open(opsimfile,'r') as opsim:
+                for visit in opsim:
+                    if visit.startswith('o'):
+                        print visit
+                        continue
+                    data = visit.strip().split()
+                    visitDict = {}
+                    visitDict[_opsim_keys[0]] = int(data[0])
+                    for i in xrange(1,len(data)):
+                        visitDict[_opsim_keys[i]] = float(data[i])
+                    self.opsim_visits.append(visitDict)
+            self._initialized_visits = True
+        else:
+            raise Exception('No data specified')
 
-        self._initialized_visits = True
-
-    def readOpsimAddFile(self):
-        """Read the additional pointing file and return the content as a list
-        of dictionaries called opsim_visits_add. The dictionary keys are
-        stored in class variable_opsim_keys.
+    def checkOpsimData(self, otherdata=None):
+        """Reads thru the data to see if there's any bug
+        or missing key(s)
         """
-        if self.opsim_name_add == None:
-            raise Exception('Pointing filename not defined')
-        dataDir = os.getenv('LSST_POINTINGS_DIR')
-        if dataDir == None:
-            raise Exception('LSST_POINTINGS_DIR env not set')
-        opsimfile2 = os.path.join(dataDir, self.opsim_name_add)
-        # Read the file, store the info.
-        self.opsim_add_visits = []
-        opsim2 = open(opsimfile2, 'r')
-        for visit in opsim2:
-            if visit.startswith('o'):
-                print visit
-                continue
-            data = visit.strip().split()
-            visitDict = {}
-            visitDict[_opsim_keys[0]] = int(data[0])
-            for i in xrange(1,len(data)):
-                visitDict[_opsim_keys[i]] = float(data[i])
-            self.opsim_add_visits.append(visitDict)
-        opsim2.close()
+        data2check = self.opsim_data
+        if otherdata:
+            data2check = otherdata
+        if type(data2check)!=list:
+            if type(data2check)==dict:
+                if set(self._opsim_keys).issubset(set(data2check.keys())):
+                    return True, 'good'
+                else:
+                    return False, 'Data is not complete'
+            else:
+                return False, 'Data is not a list nor a dictionary'
+        else:
+            nodict = 0
+            baddict = 0
+            for data in data2check:
+                if type(data)!=dict:
+                    nodict += 1
+                else:
+                    if not set(self._opsim_keys).issubset(set(data.keys())):
+                        baddict +=1
+            if (nodict == 0 and baddict == 0):
+                return True, 'good'
+            else:
+                return (False,
+                        '%d non dictionary element(s) and %s uncomplete dictionary(ies)
+                        in data list' %(nodict, baddict))
+
+    def changeOpsimData(self, opsim_filename=None, opsim_data=None):
+        """Input a new opsim data file or data list into the sequence
+        """
+        self.opsim_filename = opsim_filename
+        self.opsim_data = opsim_data
+
+        self._initialized_visits = False
+        self._initialized_sequence = False
 
     def _initPointingSeq(self):
         """Initialize input parameters for the atmospheric simulation
         """
         if not self._initialized_visits:
-            self.readOpsimFile()
-            if self.opsim_name_add:
-                self.readOpsimAddFile()
+            self.readOpsimData()
         self.npoints = len(self.opsim_visits)
         self.mjds = self.opsim_visits[0]['expMJD']
         self.mjde = self.opsim_visits[-1]['expMJD']
@@ -140,15 +159,10 @@ class AtmosphereSequences(object):
             self._initPointingSeq()
         self.atmos = modtranAtmos.Atmosphere(self.mjds, self.mjde, self.npoints)
         self.atmos.init_main_parameters()
-        for opsim_dict, idx in zip(opsim_visits, len(opsim_visits)):
+        for opsim_dict, idx in zip(opsim_visits, xrange(len(opsim_visits))):
             modtran_dict = self.fillModtranDictionary(opsim_dict, idx)
             self.modtran_visits.append(modtran_dict)
-        if self.opsim_name_add:
-            self.modtran_add_visits = []
-            for opsim_dict2, idx2 in zip(opsim_add_visits, len(opsim_add_visits))
-                modtran_dict2 = self.fillModtranDictionary(opsim_dict2, idx2)
-                self.modtran_add_visits.append(modtran_dict2)
-
+        
     def fillModtranDictionary(self, inputDict, idx):
         """Return a dictionary filled with all Modtran parameters
         for a given visit
@@ -178,7 +192,6 @@ class AtmosphereSequences(object):
         mdict['SCALE2'] = self.atmos.scale2()
         return mdict
         
-
     def getVIS(self, azimuth, z_angle, idx):
         if not self.atmos:
             raise ValueError('Atmosphere class not called')
