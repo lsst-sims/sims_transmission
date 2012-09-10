@@ -205,7 +205,8 @@ class ModtranCards:
                     self._paramFormats[k]['format'] %(paramValuesDict[k]) + \
                     card[line][(self._paramFormats[k]['endChar']):]
             # Change modtran Data Dir
-            card[2] = modtranDataDir + '\n'
+            #   this line should be 2 if the band model is not being specified; 3 if it is.
+            card[3] = modtranDataDir + '\n'
             # Add continuation card value.
             card[continuation_cardline] = card[continuation_cardline][:4] + '%d' %(continuation_cardvalue[irun]) + \
                 card[continuation_cardline][5:]            

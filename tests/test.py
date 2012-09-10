@@ -54,7 +54,8 @@ for i in range(tests):
 
     # Read the atmosphere back in and plot to screen. 
     atm = Bandpass()
-    atm.readThroughput('tmp.psc')
+#    atm.readThroughput('tmp.psc', wavelen_min=800, wavelen_max=1300, wavelen_step=0.001)
+    atm.readThroughput('tmp.psc', wavelen_min=300, wavelen_max=1100, wavelen_step=0.1)
     pylab.plot(atm.wavelen, atm.sb, 'b-')
     pylab.xlabel('Wavelength (nm)')
     pylab.ylabel('Atmospheric Transmission')
