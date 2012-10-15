@@ -94,3 +94,15 @@ def getSeason(mjd, age=None, length=None):
         return np.array([ssn[0], ssn[2]])
     else:
         return int(ssn[0])
+
+
+def MJDtoindex(mjd):
+    """Get the day number in the seasonal year given an mjd
+    (seasonal year starts on the 21st of december)
+    """
+    started_year = fromMJD(mjd)[0]
+    if (mjd - toMJD(started_year,12,21)) < 0 :
+        started_year -= 1
+    id_start = int(mjd - toMJD(started_year,12,21))
+    return id_start
+    

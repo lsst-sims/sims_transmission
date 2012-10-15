@@ -4,24 +4,27 @@ modtranAtmos.py
 Contains the class Atmosphere that can produce simulated
 realistic atmosphere parameters for MODTRAN
 List of parameters that can be output :
-o3                    - Ozone
-h2o                   - Water vapor
-vis0, visamp, visaz   - Aerosol parameters
-ihaze                 - Aerosol driver
-iseas                 - Season
-ivulc                 - Volcanic aerosols
-icld                  - Clouds
-ivsa                  - Vertical structure algorithm
-zaer11, zaer12        - Lower aerosol layer
-scale1                - Scale for lower aerosol layer
-zaer21, zaer22        - Higher aerosol layer
-scale2                - Scale for higher aerosol layer
+ o3                    - Ozone
+ h2o                   - Water vapor
+ vis0, visamp, visaz   - Aerosol parameters
+ ihaze                 - Aerosol driver
+ iseas                 - Season
+ ivulc                 - Volcanic aerosols
+ icld                  - Clouds
+ ivsa                  - Vertical structure algorithm
+ zaer11, zaer12        - Lower aerosol layer
+ scale1                - Scale for lower aerosol layer
+ zaer21, zaer22        - Higher aerosol layer
+ scale2                - Scale for higher aerosol layer
 """
 import numpy as np
-from numpy.random import uniform
-from scipy.interpolate import splrep splev
+import numpy.fft as npf
+import numpy.random as npr
+import scipy.interpolate as intp
+import os
 
 import MJDtools
+import modtranTools
 
 class Atmosphere(object):
     """Base class for retrieving a set of simulated MODTRAN
@@ -29,14 +32,16 @@ class Atmosphere(object):
     
     # fixed meteo sequence step to 1/100 of a day = 14.4 min
     _mjd_step = 0.01
+    _default_seed = 10
     _south_hem = ['Summer', 'Spring', 'Winter', 'Fall']
     _north_hem = ['Winter', 'Fall', 'Summer', 'Spring']
     
-    def __init__(self, mjds, mjde, npoints=None):
+    def __init__(self, mjds, mjde, npoints=None, seed=_default_seed):
         """Initialize class"""
         self.mjds = float(mjds)
         self.mjde = float(mjde)
         self.npoints = npoints
+        self.seed = seed
 
         self._initMjdArray()
         
@@ -53,17 +58,49 @@ class Atmosphere(object):
         self.mjde = mjde
 
     def _init_o3(self):
-        '''
-        self._o3_spline = ...
-        '''
-        pass
-    
+        """Initialize the atmospheric ozone sequence"""
+        self._o3_arr = np.zeros_like(self.mjd_arr)
+        data = self._simulate_o3()
+        ids = MJDtools.MJDtoindex(self.mjds)
+        indices = np.arange(self._o3_arr.shape[0]) + ids
+        self._o3_arr = data[indices]
 
+    def _simulate_o3(self):
+        """From satellite datasets, retrieve the main temporal
+        variability and simulate 8 years of daily data
+        """
+        transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        o3avg_file = os.path.join(transDir, 'datafiles/ozone8Yavg.npy')
+        #o3_file = os.path.join(transDir, 'datafiles/ozone8Ymasked.dat')
+        o3flat_file = os.path.join(transDir, 'datafiles/ozone8Yflatmasked.dat')
+        # Get a smooth seasonal variation
+        o3avg = np.load(o3avg_file)
+        o3smooth = modtranTools.movingAverage(o3avg - np.median(o3avg), 60)
+        o3seasSpl = intp.InterpolatedUnivariateSpline(np.arange(365), o3smooth) 
+
+        # Data corrected from seasonal var.
+        flat_data = np.ma.load(o3flat_file)
+        mean_data = np.mean(flatdata)
+        data = flat_data - mean_data
+
+        # FFT
+        ndays = int(len(data))
+        fft = npf.fft(data)
+        # Random
+        mu, sig = 0, np.abs(fft)
+        npr.seed(self.seed)
+        Famp = npr.normal(mu,sig)
+        npr.seed(self.seed)
+        phi = npr.uniform(0, 2*np.pi, ndays)
+        Fphase = np.cos(phi) + 1j*np.sin(phi)
+        random_data = npf.ifft(Famp * Fphase)
+        season = o3seasSpl(np.arange(ndays)%365)
+        return random_data + mean_data + season
+        
     def _init_h2o(self):
-        '''
-        self._h2o_spline = ...
-        '''
-        pass
+        """Initialize the atmospheric water vapor sequence
+        """
+        self._h2o_arr = np.zeros_like(self.mjd_arr)
 
     def _init_aer(self):
         self.vis0 = np.zeros_like(self.mjd_arr)
@@ -77,26 +114,29 @@ class Atmosphere(object):
         if (self.mjde-self.mjds) < n*50:
             raise ValueError('Too many volcanic periods')
         ivulc  = np.zeros_like(self.mjd_arr, dtype='int')
-        tstart = uniform(self.mjds, self.mjde - 60, n)
-        tend = tstart + uniform(0, 50)
+        tstart = npr.uniform(self.mjds, self.mjde - 60, n)
+        tend = tstart + npr.uniform(0, 50)
         for i in xrange(n):
             ivulc += np.where((self.mjd_arr >= tstart[i]) &
                              (self.mjd_arr < tend[i]), 2, 0)
         ivulc[np.where(ivulc>2)] = 2
-        self.ivulc_arr = ivulc
+        self._ivulc_arr = ivulc
 
     def init_main_parameters(self, nvulc = 5):
+        """Initialize the main atmospheric parameters"""
         self._init_o3()
         self._init_h2o()
         self._init_aer()
         self._init_vulc(nvulc)
         
-    def ozone(self):
-        pass
+    def ozone(self, idx):
+        """Atmosperic ozone"""
+        return self.o3_arr[idx]
 
-    def vapor(self):
-        pass
-
+    def vapor(self, idx):
+        """Atmospheric water vapor"""
+        return self.h2o_arr[idx]
+        
     def model(self, idx):
         """Seasonal model"""
         models = [2,6,3,6]
@@ -124,8 +164,8 @@ class Atmosphere(object):
             return iseas
 
     def ivulc(self, idx):
-        """ """
-        return ivulc_arr[idx]
+        """Volcanic aerosols"""
+        return self._ivulc_arr[idx]
 
     def ivsa(self):
         """Switch on vertical structure algorith"""

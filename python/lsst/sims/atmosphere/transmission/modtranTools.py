@@ -1,5 +1,5 @@
 """
-Astrotools.py
+modtranTools.py
 --
 This tool box provides a set of tools needed for processing 
 astronomical coordinates.
@@ -149,3 +149,11 @@ def airmass2zenith(airmass, unit='deg'):
         return z_angle
     else:
         raise AttributeError('Unit unknown !')
+
+
+def movingAverage(interval, window_size):
+    """Compute the moving average of a series of points
+    given a window size"""
+    window = np.ones(int(window_size))/float(window_size)
+    return np.convolve(interval, window, 'same')
+    

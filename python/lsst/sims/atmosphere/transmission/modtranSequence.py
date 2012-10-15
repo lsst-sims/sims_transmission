@@ -43,10 +43,11 @@ class AtmosphereSequence(object):
     basic inputs for MODTRAN, so can be used to generate an atmospheric
     transmission curve.
     The class generates these parameters for a series of opsim pointings."""
-    
+
     _opsim_keys = ['obsHistID','expMJD','fieldRA','fieldDEC']
     #_modtran_keys = ['O3', 'H2O', 'IHAZE', 'ISEAS', 'IVULC', 'ICLD', 'IVSA', 'VIS',
     #               'ZAER11', 'ZAER12', 'SCALE1', 'ZAER21', 'ZAER22', 'SCALE2']
+    _default_seed = 10
     
     def __init__(self, opsim_filename=None, opsim_data=None):
         """Instantiate an AtmosphereSequences object.
@@ -82,7 +83,7 @@ class AtmosphereSequence(object):
             dataDir = os.getenv('LSST_POINTING_DIR')
             if dataDir == None:
                 raise Exception('LSST_POINTING_DIR env not set')
-            opsimfile = os.path.join(dataDir, self.opsim_name)
+            opsimfile = os.path.join(dataDir, self.opsim_filename)
             # Read the file, store the info.
             with open(opsimfile,'r') as opsim:
                 for visit in opsim:
@@ -150,14 +151,14 @@ class AtmosphereSequence(object):
         
         self._initialized_sequence = True
 
-    def generate_parameters(self):
+    def generate_parameters(self, seed=_default_seed):
         """Generate the atmospheric parameters over time.
         Returns a list of dictionaries containing the modtran
         information for each opsim visit (in the same order).
         """
         if not self._initialized_sequence:
             self._initPointingSeq()
-        self.atmos = modtranAtmos.Atmosphere(self.mjds, self.mjde, self.npoints)
+        self.atmos = modtranAtmos.Atmosphere(self.mjds, self.mjde, self.npoints, seed)
         self.atmos.init_main_parameters()
         for opsim_dict, idx in zip(opsim_visits, xrange(len(opsim_visits))):
             modtran_dict = self.fillModtranDictionary(opsim_dict, idx)
