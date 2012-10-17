@@ -24,6 +24,11 @@ function of the Atmosphere class
 - Possibility to input a list of opsim dictionary visits instead of an opsim_file
 - checkOpsimData() to check whether the input data has no bug
 - changeOpsimData(filename or data) to change input opsim data without creating a new class
+
+10/17/12
+- ozone simulator implemented
+- seed implemented for the simulations
+- bug fixes
 """
 
 import numpy as np
@@ -35,6 +40,10 @@ import modtranTools
 rad2dec = 180. / np.pi
 deg2rad = 1./rad2dec
 
+_opsim_keys = ['obsHistID','expMJD','fieldRA','fieldDEC']
+#_modtran_keys = ['O3', 'H2O', 'IHAZE', 'ISEAS', 'IVULC', 'ICLD', 'IVSA', 'VIS',
+#               'ZAER11', 'ZAER12', 'SCALE1', 'ZAER21', 'ZAER22', 'SCALE2']
+_default_seed = 10
 
 class AtmosphereSequence(object):
     """This class is used to generate sequences of atmospheric parameters,
@@ -42,13 +51,8 @@ class AtmosphereSequence(object):
     location of each observation. These atmospheric parameters are the
     basic inputs for MODTRAN, so can be used to generate an atmospheric
     transmission curve.
-    The class generates these parameters for a series of opsim pointings."""
-
-    _opsim_keys = ['obsHistID','expMJD','fieldRA','fieldDEC']
-    #_modtran_keys = ['O3', 'H2O', 'IHAZE', 'ISEAS', 'IVULC', 'ICLD', 'IVSA', 'VIS',
-    #               'ZAER11', 'ZAER12', 'SCALE1', 'ZAER21', 'ZAER22', 'SCALE2']
-    _default_seed = 10
-    
+    The class generates these parameters for a series of opsim pointings.
+    """
     def __init__(self, opsim_filename=None, opsim_data=None):
         """Instantiate an AtmosphereSequences object.
         """
@@ -127,9 +131,7 @@ class AtmosphereSequence(object):
             if (nodict == 0 and baddict == 0):
                 return True, 'good'
             else:
-                return (False,
-                        '%d non dictionary element(s) and %s uncomplete dictionary(ies)
-                        in data list' %(nodict, baddict))
+                return (False, '%d non dictionary element(s) and %s uncomplete dictionary(ies) in data list' %(nodict, baddict))
 
     def changeOpsimData(self, opsim_filename=None, opsim_data=None):
         """Input a new opsim data file or data list into the sequence

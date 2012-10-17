@@ -26,16 +26,16 @@ import os
 import MJDtools
 import modtranTools
 
+# fixed meteo sequence step to 1/100 of a day = 14.4 min
+_mjd_step = 0.01
+_default_seed = 10
+_south_hem = ['Summer', 'Spring', 'Winter', 'Fall']
+_north_hem = ['Winter', 'Fall', 'Summer', 'Spring']
+
 class Atmosphere(object):
     """Base class for retrieving a set of simulated MODTRAN
-    atmosphere parameters between two dates in mjd."""
-    
-    # fixed meteo sequence step to 1/100 of a day = 14.4 min
-    _mjd_step = 0.01
-    _default_seed = 10
-    _south_hem = ['Summer', 'Spring', 'Winter', 'Fall']
-    _north_hem = ['Winter', 'Fall', 'Summer', 'Spring']
-    
+    atmosphere parameters between two dates in mjd.
+    """
     def __init__(self, mjds, mjde, npoints=None, seed=_default_seed):
         """Initialize class"""
         self.mjds = float(mjds)
@@ -49,7 +49,7 @@ class Atmosphere(object):
         """Create mjd array"""
         mjds = round(self.mjds, 2)
         mjde = round(self.mjde, 2) + _mjd_step
-        if self.npoint:
+        if self.npoints:
             self.mjd_step = (mjde - mjds) / self.npoints
         else:
             self.mjd_step = _mjd_step
@@ -62,14 +62,17 @@ class Atmosphere(object):
         self._o3_arr = np.zeros_like(self.mjd_arr)
         data = self._simulate_o3()
         ids = MJDtools.MJDtoindex(self.mjds)
-        indices = np.arange(self._o3_arr.shape[0]) + ids
-        self._o3_arr = data[indices]
+        data_scaled = data[ids:]
+        mjd_scaled = np.arange(data_scaled.shape[0]) + int(self.mjds)
+        data_spl = intp.UnivariateSpline(mjd_scaled, data_scaled)
+        self._o3_arr = data_spl(self.mjd_arr)
 
     def _simulate_o3(self):
         """From satellite datasets, retrieve the main temporal
         variability and simulate 8 years of daily data
         """
-        transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/transmission/trunk/python/lsst/sims/atmosphere/transmission'
+        #transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
         o3avg_file = os.path.join(transDir, 'datafiles/ozone8Yavg.npy')
         #o3_file = os.path.join(transDir, 'datafiles/ozone8Ymasked.dat')
         o3flat_file = os.path.join(transDir, 'datafiles/ozone8Yflatmasked.dat')
@@ -80,7 +83,7 @@ class Atmosphere(object):
 
         # Data corrected from seasonal var.
         flat_data = np.ma.load(o3flat_file)
-        mean_data = np.mean(flatdata)
+        mean_data = np.mean(flat_data)
         data = flat_data - mean_data
 
         # FFT
@@ -95,7 +98,7 @@ class Atmosphere(object):
         Fphase = np.cos(phi) + 1j*np.sin(phi)
         random_data = npf.ifft(Famp * Fphase)
         season = o3seasSpl(np.arange(ndays)%365)
-        return random_data + mean_data + season
+        return np.real(random_data) + mean_data + season
         
     def _init_h2o(self):
         """Initialize the atmospheric water vapor sequence
@@ -131,11 +134,11 @@ class Atmosphere(object):
         
     def ozone(self, idx):
         """Atmosperic ozone"""
-        return self.o3_arr[idx]
+        return self._o3_arr[idx]
 
     def vapor(self, idx):
         """Atmospheric water vapor"""
-        return self.h2o_arr[idx]
+        return self._h2o_arr[idx]
         
     def model(self, idx):
         """Seasonal model"""
@@ -194,3 +197,9 @@ class Atmosphere(object):
         
     def scale2(self):
         return 1.0
+
+
+if __name__=="__main__":
+    atm = Atmosphere(5538, 5539.5)
+    atm.init_main_parameters(nvulc = 0)
+    

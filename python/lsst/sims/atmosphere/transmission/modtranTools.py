@@ -100,8 +100,10 @@ def equatorial2local(ra, dec, mjd, unit='deg'):
     azimuth = np.arctan2(sa,ca)
     if unit=='dec':
         return azimuth * r2d, z_angle * r2d
-    else unit=='rad':
+    elif unit=='rad':
         return azimuth, z_angle
+    else:
+        raise AttributeError('Unit unknown !')
 
 def zenith2airmass(z_angle, site='lsst', unit='deg'):
     """Compute airmass at a given zenith angle.

@@ -6,7 +6,7 @@ Also a function getSeason that returns the season (as an int, cf. function) for 
 given MJD.
 """
 import numpy as np
-from datetime import date
+import datetime
 
 MJDorigin = 678576
 
@@ -14,8 +14,8 @@ def fromMJD(mjd, numpy=None):
     """From MJD to Gregorian
     Input as float
     Output in the form [year, month, day, dayfraction]"""
-    date = date.fromordinal(int(mjd) + MJDorigin)
-    year, month, day = date.isoformat().split('-')
+    date = datetime.date.fromordinal(int(mjd) + MJDorigin)
+    year, month, day = datetime.date.isoformat(date).split('-')
     tab = [int(year), int(month), int(day), np.mod(mjd,1.)]
     if numpy:
         tab = np.asarray(tab)
@@ -31,7 +31,7 @@ def year2MJD(fyear):
     month = np.asarray(days // 30, dtype='int') + 1
     day = np.asarray(days % 30, dtype='int')
     dfrac = days - np.asarray(days, dtype='int')
-    date_list = [date(y,m,d) for y,m,d in zip(year,month,day)]
+    date_list = [datetime.date(y,m,d) for y,m,d in zip(year,month,day)]
     mjd_list = [d.toordinal() - MJDorigin for d in date_list]
     mjd_arr = np.asarray(mjd_list, dtype='int') + dfrac
     if mjd_arr.shape[0]==1:
@@ -39,20 +39,30 @@ def year2MJD(fyear):
     else:
         return mjd_arr
 
-def toMJD(year, month, day, frac=0.0):
-     """From date to MJD
+def toMJD(year, month, day, frac=None):
+    """From date to MJD
     Input as year, month, day (or float arrays)
     Output as float (or float array)"""
-    year = np.asarray(year, dtype='int')
-    month = np.asarray(month, dtype='int')
-    day = np.asarray(day, dtype='int')
-    date_list = [date(y,m,d) for y,m,d in zip(year,month,day)]
-    mjd_list = [d.toordinal() - MJDorigin for d in date_list]
-    if len(mjd_list)==1:
-        return int(mjd_list)
+    if type(year)==int:
+        date_list = [datetime.date(int(year),int(month),int(day))]
     else:
-        return np.asarray(mjd_list, dtype='int')
-
+        year = np.asarray(year, dtype='int')
+        month = np.asarray(month, dtype='int')
+        day = np.asarray(day, dtype='int')
+        date_list = [datetime.date(y,m,d) for y,m,d in zip(year,month,day)]
+    mjd_list = [d.toordinal() - MJDorigin for d in date_list]
+    mjd_arr = np.asarray(mjd_list, dtype='int')
+    if mjd_arr.shape[0]==1:
+        if frac:
+            return int(mjd_arr) + frac
+        else:
+            return int(mjd_arr)
+    else:
+        if frac:
+            return mjd_arr + frac
+        else:
+            return mjd_arr
+        
 def getSeason(mjd, age=None, length=None):
     """Given MJD argument compute the season.
     Output :
