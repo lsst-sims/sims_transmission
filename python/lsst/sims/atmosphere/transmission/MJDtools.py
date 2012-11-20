@@ -34,7 +34,7 @@ def year2MJD(fyear):
     date_list = [datetime.date(y,m,d) for y,m,d in zip(year,month,day)]
     mjd_list = [d.toordinal() - MJDorigin for d in date_list]
     mjd_arr = np.asarray(mjd_list, dtype='int') + dfrac
-    if mjd_arr.shape[0]==1:
+    if mjd_arr.size==1:
         return float(mjd_arr)
     else:
         return mjd_arr
@@ -52,7 +52,7 @@ def toMJD(year, month, day, frac=None):
         date_list = [datetime.date(y,m,d) for y,m,d in zip(year,month,day)]
     mjd_list = [d.toordinal() - MJDorigin for d in date_list]
     mjd_arr = np.asarray(mjd_list, dtype='int')
-    if mjd_arr.shape[0]==1:
+    if mjd_arr.size==1:
         if frac:
             return int(mjd_arr) + frac
         else:
@@ -106,13 +106,17 @@ def getSeason(mjd, age=None, length=None):
         return int(ssn[0])
 
 
-def MJDtoindex(mjd):
-    """Get the day number in the seasonal year given an mjd
+def MJDtoindex(mjd, seas=None):
+    """Get the day number in a normal or seasonal year
+    given an mjd
     (seasonal year starts on the 21st of december)
     """
     started_year = fromMJD(mjd)[0]
-    if (mjd - toMJD(started_year,12,21)) < 0 :
-        started_year -= 1
-    id_start = int(mjd - toMJD(started_year,12,21))
+    if seas:
+        if (mjd - toMJD(started_year,12,21)) < 0 :
+            started_year -= 1
+        id_start = int(mjd - toMJD(started_year,12,21))
+    else:
+        id_start = int(mjd - toMJD(started_year,1,1))
     return id_start
     

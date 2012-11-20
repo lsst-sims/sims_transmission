@@ -61,15 +61,15 @@ class Atmosphere(object):
         """Initialize the atmospheric ozone sequence"""
         self._o3_arr = np.zeros_like(self.mjd_arr)
         data = self._simulate_o3()
-        ids = MJDtools.MJDtoindex(self.mjds)
+        ids = MJDtools.MJDtoindex(self.mjds, seas=True)
         data_scaled = data[ids:]
-        mjd_scaled = np.arange(data_scaled.shape[0]) + int(self.mjds)
+        mjd_scaled = np.arange(data_scaled.size) + int(self.mjds)
         data_spl = intp.UnivariateSpline(mjd_scaled, data_scaled)
         self._o3_arr = data_spl(self.mjd_arr)
 
     def _simulate_o3(self):
         """From satellite datasets, retrieve the main temporal
-        variability and simulate 8 years of daily data
+        variability of ozone and simulate 8 years of daily data
         """
         transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/transmission/trunk/python/lsst/sims/atmosphere/transmission'
         #transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
@@ -104,6 +104,55 @@ class Atmosphere(object):
         """Initialize the atmospheric water vapor sequence
         """
         self._h2o_arr = np.zeros_like(self.mjd_arr)
+        data = self._simulate_h2o()
+        ids = MJDtools.MJDtoindex(self.mjds, seas=None)
+        # of data pts a day => factor scl
+        scl = 2
+        data_scaled = data[scl*ids:]
+        mjd_scaled = np.arange(data_scaled.size)/float(scl) + int(self.mjds)
+        data_spl = intp.UnivariateSpline(mjd_scaled, data_scaled)
+        self._h2o_arr = data_spl(self.mjd_arr)
+
+    def _simulate_h2o(self):
+        """From satellite datasets, retrieve the main temporal
+        variability of water vapor and simulate 7 years of data
+        with 2 data points per day
+        """
+        transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/transmission/trunk/python/lsst/sims/atmosphere/transmission'
+        #transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        wvavg_file = os.path.join(transDir, 'datafiles/wv7Yavgmasked.dat')
+        wvavg_stdfile = os.path.join(transDir, 'datafiles/wv7Ystdmasked.dat')
+        wvflat_file = os.path.join(transDir, 'datafiles/wv7Yflatmasked.dat')
+
+        # The computation is made in log
+        
+        # Get a smooth seasonal variation wv_mean(t)
+        wvavg_ma = np.load(wvavg_file)
+        wvsmooth = modtranTools.movingAverage(wvavg_ma, 60)
+        wvseasSpl = intp.InterpolatedUnivariateSpline(np.arange(2*365), wvsmooth)
+
+        # Get a smooth standard deviation sigma_wv(t)
+        wvstd_ma = np.load(wvavg_stdfile)
+        wvstdsmooth = modtranTools.movingAverage(wvstd_ma, 60)
+        wvstdSpl = intp.InterpolatedUnivariateSpline(np.arange(2*365), wvstdsmooth)
+        
+        # Data corrected from seasonal variation and amplitude
+        data = np.ma.load(wvflat_file)
+        
+        # FFT
+        ndays = int(len(data))
+        fft = npf.fft(data)
+        # Random
+        mu, sig = 0, np.abs(fft)
+        npr.seed(self.seed)
+        Famp = npr.normal(mu,sig*2.0)
+        npr.seed(self.seed)
+        phi = npr.uniform(0, 2*np.pi, ndays)
+        Fphase = np.cos(phi) + 1j*np.sin(phi)
+        random_data = npf.ifft(Famp * Fphase)
+        season_range = wvseasSpl(np.arange(ndays)%(2*365))
+        std_range = wvstdSpl(np.arange(ndays)%(2*365))
+        return np.exp(np.real(random_data) * std_range + season_range)
 
     def _init_aer(self):
         self.vis0 = np.zeros_like(self.mjd_arr)

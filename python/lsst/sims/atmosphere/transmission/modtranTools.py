@@ -153,9 +153,12 @@ def airmass2zenith(airmass, unit='deg'):
         raise AttributeError('Unit unknown !')
 
 
-def movingAverage(interval, window_size):
+def movingAverage(data, window_size):
     """Compute the moving average of a series of points
     given a window size"""
+    # make a loop on the data
+    i = window_size
+    interval = np.concatenate([data[-i:], data, data[:i]]) 
     window = np.ones(int(window_size))/float(window_size)
-    return np.convolve(interval, window, 'same')
+    return np.convolve(interval, window, 'same')[i:-i]
     
