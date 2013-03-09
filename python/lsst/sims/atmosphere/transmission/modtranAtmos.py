@@ -32,6 +32,7 @@ _default_seed = 10
 _south_hem = ['Summer', 'Spring', 'Winter', 'Fall']
 _north_hem = ['Winter', 'Fall', 'Summer', 'Spring']
 
+
 class Atmosphere(object):
     """Base class for retrieving a set of simulated MODTRAN
     atmosphere parameters between two dates in mjd.
@@ -44,7 +45,7 @@ class Atmosphere(object):
         self.seed = seed
 
         self._initMjdArray()
-        
+
     def _initMjdArray(self):
         """Create mjd array"""
         mjds = round(self.mjds, 2)
@@ -79,7 +80,7 @@ class Atmosphere(object):
         # Get a smooth seasonal variation
         o3avg = np.load(o3avg_file)
         o3smooth = modtranTools.movingAverage(o3avg - np.median(o3avg), 60)
-        o3seasSpl = intp.InterpolatedUnivariateSpline(np.arange(365), o3smooth) 
+        o3seasSpl = intp.InterpolatedUnivariateSpline(np.arange(365), o3smooth)
 
         # Data corrected from seasonal var.
         flat_data = np.ma.load(o3flat_file)
@@ -92,14 +93,14 @@ class Atmosphere(object):
         # Random
         mu, sig = 0, np.abs(fft)
         npr.seed(self.seed)
-        Famp = npr.normal(mu,sig)
+        Famp = npr.normal(mu, sig)
         npr.seed(self.seed)
         phi = npr.uniform(0, 2*np.pi, ndays)
         Fphase = np.cos(phi) + 1j*np.sin(phi)
         random_data = npf.ifft(Famp * Fphase)
-        season = o3seasSpl(np.arange(ndays)%365)
+        season = o3seasSpl(np.arange(ndays) % 365)
         return np.real(random_data) + mean_data + season
-        
+
     def _init_h2o(self):
         """Initialize the atmospheric water vapor sequence
         """
@@ -125,7 +126,7 @@ class Atmosphere(object):
         wvflat_file = os.path.join(transDir, 'datafiles/wv7Yflatmasked.dat')
 
         # The computation is made in log
-        
+
         # Get a smooth seasonal variation wv_mean(t)
         wvavg_ma = np.load(wvavg_file)
         wvsmooth = modtranTools.movingAverage(wvavg_ma, 60)
@@ -135,23 +136,23 @@ class Atmosphere(object):
         wvstd_ma = np.load(wvavg_stdfile)
         wvstdsmooth = modtranTools.movingAverage(wvstd_ma, 60)
         wvstdSpl = intp.InterpolatedUnivariateSpline(np.arange(2*365), wvstdsmooth)
-        
+
         # Data corrected from seasonal variation and amplitude
         data = np.ma.load(wvflat_file)
-        
+
         # FFT
         ndays = int(len(data))
         fft = npf.fft(data)
         # Random
         mu, sig = 0, np.abs(fft)
         npr.seed(self.seed)
-        Famp = npr.normal(mu,sig*2.0)
+        Famp = npr.normal(mu, sig*2.0)
         npr.seed(self.seed)
         phi = npr.uniform(0, 2*np.pi, ndays)
         Fphase = np.cos(phi) + 1j*np.sin(phi)
         random_data = npf.ifft(Famp * Fphase)
-        season_range = wvseasSpl(np.arange(ndays)%(2*365))
-        std_range = wvstdSpl(np.arange(ndays)%(2*365))
+        season_range = wvseasSpl(np.arange(ndays) % (2 * 365))
+        std_range = wvstdSpl(np.arange(ndays) % (2 * 365))
         return np.exp(np.real(random_data) * std_range + season_range)
 
     def _init_aer(self):
@@ -165,22 +166,22 @@ class Atmosphere(object):
         random durations (0-50 days) """
         if (self.mjde-self.mjds) < n*50:
             raise ValueError('Too many volcanic periods')
-        ivulc  = np.zeros_like(self.mjd_arr, dtype='int')
+        ivulc = np.zeros_like(self.mjd_arr, dtype='int')
         tstart = npr.uniform(self.mjds, self.mjde - 60, n)
         tend = tstart + npr.uniform(0, 50)
         for i in xrange(n):
             ivulc += np.where((self.mjd_arr >= tstart[i]) &
                              (self.mjd_arr < tend[i]), 2, 0)
-        ivulc[np.where(ivulc>2)] = 2
+        ivulc[np.where(ivulc > 2)] = 2
         self._ivulc_arr = ivulc
 
-    def init_main_parameters(self, nvulc = 5):
+    def init_main_parameters(self, nvulc=5):
         """Initialize the main atmospheric parameters"""
         self._init_o3()
         self._init_h2o()
         self._init_aer()
         self._init_vulc(nvulc)
-        
+
     def ozone(self, idx):
         """Atmosperic ozone"""
         return self._o3_arr[idx]
@@ -188,10 +189,10 @@ class Atmosphere(object):
     def vapor(self, idx):
         """Atmospheric water vapor"""
         return self._h2o_arr[idx]
-        
+
     def model(self, idx):
         """Seasonal model"""
-        models = [2,6,3,6]
+        models = [2, 6, 3, 6]
         return models[self.iseas(idx)]
 
     def ihaze(self):
@@ -226,29 +227,28 @@ class Atmosphere(object):
     def zaer11(self):
         """Bottom lower aerosol layer"""
         return 0.0
-    
+
     def zaer12(self):
         """Top lower aerosol layer"""
         return 3.0
-            
+
     def scale1(self, idx):
-        if not _initialized_aer:
+        if not self._initialized_aer:
             self.init_aer()
         return np.fix(-7.08 * np.log(self.vis0[idx]) + 29.)
 
     def zaer21(self):
         """Bottom higher aerosol layer"""
         return 0.0
-    
+
     def zaer22(self):
         """Top higher aerosol layer"""
         return 3.0
-        
+
     def scale2(self):
         return 1.0
 
 
-if __name__=="__main__":
+if __name__ == "__main__":
     atm = Atmosphere(5538, 5539.5)
-    atm.init_main_parameters(nvulc = 0)
-    
+    atm.init_main_parameters(nvulc=0)
