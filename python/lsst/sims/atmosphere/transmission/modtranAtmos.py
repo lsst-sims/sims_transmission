@@ -17,17 +17,17 @@ List of parameters that can be output :
  zaer21, zaer22        - Higher aerosol layer
  scale2                - Scale for higher aerosol layer
 """
-import numpy as np
-import numpy.fft as npf
-import numpy.random as npr
-import scipy.interpolate as intp
+import numpy
+import scipy
 import os
 
 import MJDtools
 import modtranTools
 
-# fixed meteo sequence step to 1/100 of a day = 14.4 min
-_mjd_step = 0.01
+# default minimum meteo sequence step to 1/100 of a day
+_mjd_minstep = 0.01
+# default min points in spline
+_mjd_nmin = 100
 _default_seed = 10
 _south_hem = ['Summer', 'Spring', 'Winter', 'Fall']
 _north_hem = ['Winter', 'Fall', 'Summer', 'Spring']
@@ -37,36 +37,56 @@ class Atmosphere(object):
     """Base class for retrieving a set of simulated MODTRAN
     atmosphere parameters between two dates in mjd.
     """
-    def __init__(self, mjds, mjde, npoints=None, seed=_default_seed):
-        """Initialize class"""
-        self.mjds = float(mjds)
-        self.mjde = float(mjde)
+    def __init__(self, mjds, mjde, npoints, seed=_default_seed):
+        """Initialize Atmosphere class"""
+        # Starting date
+        self.mjds = int(mjds) - 5
+        # Ending date
+        self.mjde = int(mjde) + 5
+        # Number of visits
         self.npoints = npoints
+        # Seed for the randoms
         self.seed = seed
 
-        self._initMjdArray()
+        # Array for splines
+        # self._mjd_arr = numpy.array([])
+        # Ozone spline
+        self._o3_spl = None
+        # Water vapor spline
+        self._h2o_spl = None
+        # Aerosols parameter splines
+        self._aer_p0_spl = None
+        self._aer_p1_spl = None
+        self._aer_p2_spl = None
 
-    def _initMjdArray(self):
-        """Create mjd array"""
-        mjds = round(self.mjds, 2)
-        mjde = round(self.mjde, 2) + _mjd_step
-        if self.npoints:
-            self.mjd_step = (mjde - mjds) / self.npoints
-        else:
-            self.mjd_step = _mjd_step
-        self.mjd_arr = np.arange(mjds, mjde, self.mjd_step)
-        self.mjds = mjds
-        self.mjde = mjde
+        # self._initialized_array = False
+
+    def _init_mjdArray(self):
+        """Create mjd array to serve as base for splines"""
+        dmjd = float(self.mjde - self.mjds)
+        mjd_step = dmjd / self.npoints
+        if mjd_step < _mjd_minstep:
+            mjd_step = _mjd_minstep
+        nmjd = dmjd / float(mjd_step)
+        if nmjd < _mjd_nmin:
+            nmjd = _mjd_nmin
+        self._mjd_arr = numpy.linspace(self.mjds, self.mjde, nmjd)
+
+        # self._initialized_array = True
 
     def _init_o3(self):
         """Initialize the atmospheric ozone sequence"""
-        self._o3_arr = np.zeros_like(self.mjd_arr)
+        # self._o3_arr = numpy.zeros_like(self._mjd_arr)
         data = self._simulate_o3()
+        # ids = MJDtools.MJDtoindex(self._mjd_arr[0], seas=True)
+        # ide = MJDtools.MJDtoindex(self._mjd_arr[-1], seas=True)
         ids = MJDtools.MJDtoindex(self.mjds, seas=True)
-        data_scaled = data[ids:]
-        mjd_scaled = np.arange(data_scaled.size) + int(self.mjds)
-        data_spl = intp.UnivariateSpline(mjd_scaled, data_scaled)
-        self._o3_arr = data_spl(self.mjd_arr)
+        ide = MJDtools.MJDtoindex(self.mjde, seas=True)
+        data_scaled = data[ids:ide]
+        mjd_scaled = numpy.arange(data_scaled.size) + int(self.mjds)
+        # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
+        # self._o3_arr = data_spl(self._mjd_arr)
+        self._o3_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
 
     def _simulate_o3(self):
         """From satellite datasets, retrieve the main temporal
@@ -78,122 +98,109 @@ class Atmosphere(object):
         #o3_file = os.path.join(transDir, 'datafiles/ozone8Ymasked.dat')
         o3flat_file = os.path.join(transDir, 'datafiles/ozone8Yflatmasked.dat')
         # Get a smooth seasonal variation
-        o3avg = np.load(o3avg_file)
-        o3smooth = modtranTools.movingAverage(o3avg - np.median(o3avg), 60)
-        o3seasSpl = intp.InterpolatedUnivariateSpline(np.arange(365), o3smooth)
-
+        o3avg = numpy.load(o3avg_file)
+        o3smooth = modtranTools.movingAverage(o3avg - numpy.median(o3avg), 60)
+        o3seasSpl = scipy.interpolate.InterpolatedUnivariateSpline(numpy.arange(365), o3smooth)
         # Data corrected from seasonal var.
-        flat_data = np.ma.load(o3flat_file)
-        mean_data = np.mean(flat_data)
+        flat_data = numpy.ma.load(o3flat_file)
+        mean_data = numpy.mean(flat_data)
         data = flat_data - mean_data
-
         # FFT
         ndays = int(len(data))
-        fft = npf.fft(data)
+        fft = numpy.fft.fft(data)
         # Random
-        mu, sig = 0, np.abs(fft)
-        npr.seed(self.seed)
-        Famp = npr.normal(mu, sig)
-        npr.seed(self.seed)
-        phi = npr.uniform(0, 2*np.pi, ndays)
-        Fphase = np.cos(phi) + 1j*np.sin(phi)
-        random_data = npf.ifft(Famp * Fphase)
-        season = o3seasSpl(np.arange(ndays) % 365)
-        return np.real(random_data) + mean_data + season
+        mu, sig = 0, numpy.abs(fft)
+        numpy.random.seed(self.seed)
+        Famp = numpy.random.normal(mu, sig)
+        numpy.random.seed(self.seed)
+        phi = numpy.random.uniform(0, 2 * numpy.pi, ndays)
+        Fphase = numpy.cos(phi) + 1j*numpy.sin(phi)
+        random_data = numpy.fft.ifft(Famp * Fphase)
+        season = o3seasSpl(numpy.arange(ndays) % 365)
+        return numpy.real(random_data) + mean_data + season
 
     def _init_h2o(self):
-        """Initialize the atmospheric water vapor sequence
-        """
-        self._h2o_arr = np.zeros_like(self.mjd_arr)
+        """Initialize the atmospheric water vapor sequence"""
+        self._h2o_arr = numpy.zeros_like(self.mjd_arr)
         data = self._simulate_h2o()
         ids = MJDtools.MJDtoindex(self.mjds, seas=None)
         # of data pts a day => factor scl
         scl = 2
         data_scaled = data[scl*ids:]
-        mjd_scaled = np.arange(data_scaled.size)/float(scl) + int(self.mjds)
-        data_spl = intp.UnivariateSpline(mjd_scaled, data_scaled)
+        mjd_scaled = numpy.arange(data_scaled.size)/float(scl) + int(self.mjds)
+        data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
         self._h2o_arr = data_spl(self.mjd_arr)
 
     def _simulate_h2o(self):
-        """From satellite datasets, retrieve the main temporal
-        variability of water vapor and simulate 7 years of data
-        with 2 data points per day
-        """
+        """From satellite datasets, retrieve the main temporal variability of
+        water vapor and simulate 7 years of data with 2 data points per day """
+        # The computation is made in log
         transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/transmission/trunk/python/lsst/sims/atmosphere/transmission'
         #transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
         wvavg_file = os.path.join(transDir, 'datafiles/wv7Yavgmasked.dat')
         wvavg_stdfile = os.path.join(transDir, 'datafiles/wv7Ystdmasked.dat')
         wvflat_file = os.path.join(transDir, 'datafiles/wv7Yflatmasked.dat')
-
-        # The computation is made in log
-
         # Get a smooth seasonal variation wv_mean(t)
-        wvavg_ma = np.load(wvavg_file)
+        wvavg_ma = numpy.load(wvavg_file)
         wvsmooth = modtranTools.movingAverage(wvavg_ma, 60)
-        wvseasSpl = intp.InterpolatedUnivariateSpline(np.arange(2*365), wvsmooth)
-
+        wvseasSpl = scipy.interpolate.InterpolatedUnivariateSpline(numpy.arange(2*365), wvsmooth)
         # Get a smooth standard deviation sigma_wv(t)
-        wvstd_ma = np.load(wvavg_stdfile)
+        wvstd_ma = numpy.load(wvavg_stdfile)
         wvstdsmooth = modtranTools.movingAverage(wvstd_ma, 60)
-        wvstdSpl = intp.InterpolatedUnivariateSpline(np.arange(2*365), wvstdsmooth)
-
+        wvstdSpl = scipy.interpolate.InterpolatedUnivariateSpline(numpy.arange(2*365), wvstdsmooth)
         # Data corrected from seasonal variation and amplitude
-        data = np.ma.load(wvflat_file)
-
+        data = numpy.ma.load(wvflat_file)
         # FFT
         ndays = int(len(data))
-        fft = npf.fft(data)
+        fft = numpy.fft.fft(data)
         # Random
-        mu, sig = 0, np.abs(fft)
-        npr.seed(self.seed)
-        Famp = npr.normal(mu, sig*2.0)
-        npr.seed(self.seed)
-        phi = npr.uniform(0, 2*np.pi, ndays)
-        Fphase = np.cos(phi) + 1j*np.sin(phi)
-        random_data = npf.ifft(Famp * Fphase)
-        season_range = wvseasSpl(np.arange(ndays) % (2 * 365))
-        std_range = wvstdSpl(np.arange(ndays) % (2 * 365))
-        return np.exp(np.real(random_data) * std_range + season_range)
+        mu, sig = 0, numpy.abs(fft)
+        numpy.random.seed(self.seed)
+        Famp = numpy.random.normal(mu, sig*2.0)
+        numpy.random.seed(self.seed)
+        phi = numpy.random.uniform(0, 2*numpy.pi, ndays)
+        Fphase = numpy.cos(phi) + 1j*numpy.sin(phi)
+        random_data = numpy.fft.ifft(Famp * Fphase)
+        season_range = wvseasSpl(numpy.arange(ndays) % (2 * 365))
+        std_range = wvstdSpl(numpy.arange(ndays) % (2 * 365))
+        return numpy.exp(numpy.real(random_data) * std_range + season_range)
 
     def _init_aer(self):
-        self.vis0 = np.zeros_like(self.mjd_arr)
-        self.visaz = np.zeros_like(self.mjd_arr)
-        self.visamp = np.zeros_like(self.mjd_arr)
+        self.vis0 = numpy.zeros_like(self.mjd_arr)
+        self.visaz = numpy.zeros_like(self.mjd_arr)
+        self.visamp = numpy.zeros_like(self.mjd_arr)
         pass
 
-    def _init_vulc(self, n):
-        """Create n periods of fresh volcanic aerosol with
-        random durations (0-50 days) """
-        if (self.mjde-self.mjds) < n*50:
-            raise ValueError('Too many volcanic periods')
-        ivulc = np.zeros_like(self.mjd_arr, dtype='int')
-        tstart = npr.uniform(self.mjds, self.mjde - 60, n)
-        tend = tstart + npr.uniform(0, 50)
-        for i in xrange(n):
-            ivulc += np.where((self.mjd_arr >= tstart[i]) &
-                             (self.mjd_arr < tend[i]), 2, 0)
-        ivulc[np.where(ivulc > 2)] = 2
-        self._ivulc_arr = ivulc
-
-    def init_main_parameters(self, nvulc=5):
+    def init_main_parameters(self, nvulc=0):
         """Initialize the main atmospheric parameters"""
+        # if not self._initialized_array:
+            # self._init_mjdArray()
         self._init_o3()
         self._init_h2o()
         self._init_aer()
-        self._init_vulc(nvulc)
+        # self._init_vulc(nvulc)
 
-    def ozone(self, idx):
-        """Atmosperic ozone"""
-        return self._o3_arr[idx]
+    def ozone(self, mjd):
+        """Return atmosperic ozone for a given mjd"""
+        # return self._o3_arr[idx]
+        return self._o3_spl(mjd)
 
-    def vapor(self, idx):
-        """Atmospheric water vapor"""
-        return self._h2o_arr[idx]
+    def wvapor(self, mjd):
+        """Return atmospheric water vapor for a given mjd"""
+        # return self._h2o_arr[idx]
+        return self._h2o_spl(mjd)
 
-    def model(self, idx):
+    def aerosols(self, mjd):
+        """Return atmospheric aerosols parameters for a given mjd"""
+        return (self._aer_p0_spl(mjd),
+                self._aer_p1_spl(mjd),
+                self._aer_p2_spl(mjd))
+
+    def model(self, mjd):
         """Seasonal model"""
         models = [2, 6, 3, 6]
-        return models[self.iseas(idx)]
+        # return models[self.iseas(idx)]
+        return models[MJDtools.getSeason(mjd)]
 
     def ihaze(self):
         """Aerosols drivers
@@ -201,7 +208,21 @@ class Atmosphere(object):
            1 : rural
            6 : tropospheric
         """
-        return 1
+        return 0
+
+    def _init_vulc(self, n):
+        """Create n periods of fresh volcanic aerosol with
+        random durations (0-50 days) """
+        if (self.mjde-self.mjds) < n*50:
+            raise ValueError('Too many volcanic periods')
+        ivulc = numpy.zeros_like(self.mjd_arr, dtype='int')
+        tstart = numpy.random.uniform(self.mjds, self.mjde - 60, n)
+        tend = tstart + numpy.random.uniform(0, 50)
+        for i in xrange(n):
+            ivulc += numpy.where((self.mjd_arr >= tstart[i]) &
+                                (self.mjd_arr < tend[i]), 2, 0)
+        ivulc[numpy.where(ivulc > 2)] = 2
+        self._ivulc_arr = ivulc
 
     def iseas(self, idx, addName=None):
         """Season at Cerro Pachon site
@@ -235,7 +256,7 @@ class Atmosphere(object):
     def scale1(self, idx):
         if not self._initialized_aer:
             self.init_aer()
-        return np.fix(-7.08 * np.log(self.vis0[idx]) + 29.)
+        return numpy.fix(-7.08 * numpy.log(self.vis0[idx]) + 29.)
 
     def zaer21(self):
         """Bottom higher aerosol layer"""
