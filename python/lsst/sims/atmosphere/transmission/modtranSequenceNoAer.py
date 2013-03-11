@@ -4,41 +4,45 @@ modtranSequence.py
 Class used to generate sequences of atmospheric parameters for input to MODTRAN.
 
 Calling method :
-  seq = AtmosphereSequences('Opsim3.61.02.sel_parmlist.dat')
-  seq.generate_parameters()
+--------------
+  seq = AtmosphereSequence('Opsim3.61.02.sel_parmlist.dat')
+  seq.generateParameters(seed=_default_seed)
 
   modtranDictList = seq.modtran_visits
   modtranParameters = modtranDictList[i]
 
+Description :
+-----------
+The AtmosphereSequence
+- inputs a live opsim dictionary / list of dictionaries OR a filename,
+- verifies the data contains at least the following keys :
+'obsHistID', 'expMJD', 'fieldRA', 'fieldDEC',
+- initializes a pointing sequence by defining the date boundaries,
+- calls the Atmosphere class in the modtranAtmos.py and generates atmospheric
+parameters for the given pointings,
+- writes those parameters in a file / database, (IN PROGRESS)
+- loads parameters from database on demand, (IN PROGRESS)
+- runs MODTRAN without the aerosols for each selected pointing (one at a time)
+and returns output, (QUITE)
+- computes the aerosol extinction spectrum for the same pointings,
+- combines both spectra to output the final atmosphere transmission either
+live or saved into a file.
+
 To Lynne:
 ---------
-NEED TO HAVE THE ENVIRONNEMENT VARIABLE DEFINED : LSST_POINTING_DIR
+NEED TO HAVE THE ENVIRONNEMENT VARIABLE DEFINED : LSST_POINTING_DIR targetting
+the path where the pointing files are.
 
-For the moment, the way the code works is
-  - I give to the makeatmos (e.g. modtranAtmos.Atmosphere) the mjd boundaries
-of the opsim file and the number of lines of the catalog
-  - Then I compute the values for each pointing by calling the appropriate
-function of the Atmosphere class
-
-6/29/12
-- Possibility to input a list of opsim dictionary visits instead of an opsim_file
-- checkOpsimData() to check whether the input data has no bug
-- changeOpsimData(filename or data) to change input opsim data without creating a new class
-
-10/17/12
-- ozone simulator implemented
-- seed implemented for the simulations
-- bug fixes
 """
 
-import numpy as np
+import numpy
 import os
+from lsst.sims.atmosphere.transmission.modtranAtmos import Atmosphere
+from lsst.sims.atmosphere.transmission.modtranCardsNoAer import ModtranCards
+import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
 
-import modtranAtmos
-import modtranTools
-
-rad2dec = 180. / np.pi
-deg2rad = 1./rad2dec
+RAD2DEC = 180. / numpy.pi
+DEG2RAD = numpy.pi / 180.
 
 _opsim_keys = ['obsHistID', 'expMJD', 'fieldRA', 'fieldDEC']
 #_modtran_keys = ['O3', 'H2O', 'IHAZE', 'ISEAS', 'IVULC', 'ICLD', 'IVSA', 'VIS',
@@ -55,22 +59,26 @@ class AtmosphereSequence(object):
     The class generates these parameters for a series of opsim pointings.
     """
     def __init__(self, opsim_filename=None, opsim_data=None):
-        """Instantiate an AtmosphereSequences object.
-        """
+        """Instantiate an AtmosphereSequence."""
+        # OpSim pointing file, if existing
         self.opsim_filename = opsim_filename
+        # OpSim pointing dictionary, if existing
         self.opsim_data = opsim_data
+        # List of OpSim visits for the sequence
         self.opsim_visits = []
+        # List of MODTRAN dictionaries
         self.modtran_visits = []
+        # List of aerosol parameters
+        self.aerosol_visits = []
+        # MODTRAN wavelengths array
+        self.modtran_wl = numpy.array([])
+        # Transmittance array
+        self.transmittance = numpy.array([])
 
-        self._initialized_visits = False
+        # Internal monitoring attributes
         self._initialized_sequence = False
-
-        """
-        # so, for example ..
-        self.modtran_visits[i] = {}
-        for key in self.modtran_keys:
-            self.modtran_visits[i][key] = value
-        """
+        self._initialized_parameters = False
+        self._initialized_extinction = False
 
     def readOpsimData(self):
         """Read the pointing file and return the content as a list
@@ -101,14 +109,11 @@ class AtmosphereSequence(object):
                     for i in xrange(1, len(data)):
                         visitDict[_opsim_keys[i]] = float(data[i])
                     self.opsim_visits.append(visitDict)
-            self._initialized_visits = True
         else:
             raise Exception('No data specified')
 
     def checkOpsimData(self, otherdata=None):
-        """Reads thru the data to see if there's any bug
-        or missing key(s)
-        """
+        """Reads thru the data to see if there's any bug or missing key(s)."""
         data2check = self.opsim_data
         if otherdata:
             data2check = otherdata
@@ -132,85 +137,161 @@ class AtmosphereSequence(object):
             if (nodict == 0 and baddict == 0):
                 return True, 'good'
             else:
-                return (False, '%d non dictionary element(s) and %s uncomplete dictionary(ies) in data list' % (nodict, baddict))
+                statement = '{0} non dictionary element(s) and {1} uncomplete\
+                    dictionary(ies) in data list'.format(nodict, baddict)
+                return (False,  statement)
 
     def changeOpsimData(self, opsim_filename=None, opsim_data=None):
-        """Input a new opsim data file or data list into the sequence
-        """
+        """Input a new opsim data file or data list into the sequence."""
         self.opsim_filename = opsim_filename
         self.opsim_data = opsim_data
 
-        self._initialized_visits = False
+        self.opsim_visits = []
         self._initialized_sequence = False
 
-    def _initPointingSeq(self):
-        """Initialize input parameters for the atmospheric simulation
-        """
-        if not self._initialized_visits:
+    def initPointingSequence(self):
+        """Initialize input parameters for the atmospheric simulation."""
+        if not self.opsim_visits:
             self.readOpsimData()
+        # Number of visits
         self.npoints = len(self.opsim_visits)
+        # Starting date
         self.mjds = self.opsim_visits[0]['expMJD']
+        # Ending date
         self.mjde = self.opsim_visits[-1]['expMJD']
 
         self._initialized_sequence = True
 
-    def generate_parameters(self, seed=_default_seed):
+    def generateParameters(self, seed=_default_seed):
         """Generate the atmospheric parameters over time.
         Returns a list of dictionaries containing the modtran
         information for each opsim visit (in the same order).
         """
         if not self._initialized_sequence:
-            self._initPointingSeq()
-        self.atmos = modtranAtmos.Atmosphere(
+            self.initPointingSequence()
+        # Instantiate the Atmosphere class
+        self.atmos = Atmosphere(
             self.mjds, self.mjde, self.npoints, seed)
+        # Generate main atmosphere parameters sequence
         self.atmos.init_main_parameters()
-        for opsim_dict, idx in zip(self.opsim_visits,
-                                   xrange(len(self.opsim_visits))):
-            modtran_dict = self.fillModtranDictionary(opsim_dict, idx)
+        # Associate a value of these parameters for each pointing
+        for opsim_dict in self.opsim_visits:
+            # Get coordinates
+            RA, DEC = (opsim_dict['fieldRA'], opsim_dict['fieldDEC'])
+            # Get ID and date
+            obsid, mjd = (opsim_dict['obsHistID'], opsim_dict['expMJD'])
+            # Compute azimuth and elevation angle
+            azimuth, z_angle = modtranTools.equatorial2local(RA, DEC,
+                                                             mjd, unit='rad')
+            # Get atmosphere parameters
+            modtran_dict = self.fillModtranDictionary(mjd, obsid, z_angle)
             self.modtran_visits.append(modtran_dict)
+            self.aerosol_visits.append(self.atmos.aerosols(mjd) + (z_angle,))
 
-    def fillModtranDictionary(self, inputDict, idx):
+            self._initialized_parameters = True
+
+    def fillModtranDictionary(self, mjd, obsid, z_angle):
         """Return a dictionary filled with all Modtran parameters
-        for a given visit
-        """
+        for a given visit."""
         if not self.atmos:
             raise ValueError('Atmosphere class not called')
         mdict = {}
-        RA, DEC, mjd = (inputDict['fieldRA'],
-                        inputDict['fieldDEC'],
-                        inputDict['expMJD'])
-        azimuth, z_angle = modtranTools.equatorial2local(RA, DEC,
-                                                         mjd, unit='rad')
-        mdict['ID'] = inputDict['obsHistID']
+        mdict['ID'] = obsid
         mdict['ZANGLE'] = z_angle
-        mdict['MODEL'] = self.atmos.model(idx)
+        mdict['MODEL'] = self.atmos.model(mjd)
         mdict['O3'] = self.atmos.ozone(mjd)
-        mdict['H2O'] = self.atmos.vapor(mjd)
-        mdict['VIS'] = self.getVIS(azimuth, z_angle, idx)
-        mdict['ISEAS'] = self.atmos.iseas(idx)
-        mdict['IVULC'] = self.atmos.ivulc(idx)
+        mdict['H2O'] = self.atmos.wvapor(mjd)
+        # put aerosols computation outsite of MODTRAN
         mdict['IHAZE'] = self.atmos.ihaze()
-        mdict['IVSA'] = self.atmos.ivsa()
-        mdict['ZAER11'] = self.atmos.zaer11()
-        mdict['ZAER12'] = self.atmos.zaer12()
-        mdict['SCALE1'] = self.atmos.scale1(idx)
-        mdict['ZAER21'] = self.atmos.zaer21()
-        mdict['ZAER22'] = self.atmos.zaer22()
-        mdict['SCALE2'] = self.atmos.scale2()
         return mdict
 
-    def getVIS(self, azimuth, z_angle, idx):
-        if not self.atmos:
-            raise ValueError('Atmosphere class not called')
-        if (z_angle*rad2dec) < 45.:
-            sin2z = np.sin(2.*z_angle)
-        else:
-            sin2z = 1.
-        vis0, visamp, visaz = (self.atmos.vis0[idx],
-                               self.atmos.visamp[idx],
-                               self.atmos.visaz[idx])
-        vis = vis0 + visamp * np.sin(azimuth - visaz) * sin2z
-        if vis < 4.:
-            return 4.0
-        else:
-            return vis
+    def runModtran(self):
+        """Call the modtranCards class in order to run MODTRAN for
+        selected visits"""
+        if not self._initialized_parameters:
+            self.generateParameters()
+
+        # Call for the MODTRAN card class
+        modcard = ModtranCards()
+        modcard.setDefaults()
+        # TODO : check the length of the visits to call for separate MODTRAN runs
+        # Write the cards to the disk
+        modcard.writeModtranCards(self.modtran_visits, self.outfilename)
+        # TODO : wait for file to be completely written before running MODTRAN
+        modcard.runModtran()
+
+        self._initialized_extinction = True
+
+    def initModtranWavelengths(self):
+        "Load in memory the tabulated wavelengths at which MODTRAN outputs data"
+        main_dir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        modtranwfile = os.path.join(main_dir, 'data/modwl.txt')
+        self.modtran_wl = numpy.loadtxt(modtranwfile)
+
+    def getModtranExtinction(self, outfileRoot='tmp'):
+        """Read MODTRAN atmosphere extinction output file '.plt' and store the
+        runs into a 2D array"""
+        if not self._initialized_extinction:
+            self.runModtran()
+        if not self.modtran_wl:
+            self.initModtranWavelengths()
+
+        modtranDataDir = os.getenv('MODTRAN_DATADIR')
+        # MODTRAN transmission outputfile
+        outputfile = '{0}/{1}.plt'.format(self.outfilename, self.outfilename)
+        outputpath = os.path.join(modtranDataDir, outputfile)
+        # Initialize transmittance array for each run
+        self.transmittance = numpy.zeros((len(self.modtran_visits),
+                                          len(self.modtran_wl)))
+        with open(outputpath, 'r') as outf:
+            # File starts with data - no header
+            run = 0
+            # I use negative indices because MODTRAN prints the wavelengths
+            # in decreasing order
+            idx = -1
+            for line in outf:
+                if line.starstwith('$'):
+                    run += 1
+                    idx = -1
+                    continue
+                values = line.strip().split()
+                self.transmittance[run][idx] = float(values[1])
+                idx -= 1
+        # MODTRAN transmittance stored
+
+    def addAerExtinction(self, save=True):
+        """Add the aerosol extinction to the MODTRAN computed extinction"""
+        if not self.transmittance:
+            self.getModtranExtinction()
+
+        # Multiply both transmittances for each run
+        for run in xrange(len(self.modtran_visits)):
+            self.transmittance[run] *= self.getAerTransmittance(run)
+        # Save the result into an ascii file
+        if save:
+            modtranDataDir = os.getenv('MODTRAN_DATADIR')
+            outputfile = '{0}/{1}_final.plt'.format(
+                self.outfilename, self.outfilename)
+            outputpath = os.path.join(modtranDataDir, outputfile)
+            with open(outputpath, 'w') as transmf:
+                transmf.write('$ FINAL ATMOSPHERE TRANSMISSION\n')
+                for val in xrange(len(self.modtran_wl)):
+                    data = '\t'.join('{0:f}'.format(self.transmittance[run][val])
+                                     for run in xrange(len(self.modtran_wl)))
+                    line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
+                    transmf.write(line)
+
+    def getAerTransmittance(self, run):
+        """Compute the atmospheric transmittance due to aerosols"""
+        if not self.modtran_wl:
+            self.initModtranWavelengths()
+
+        # Get polynomial roots as well as zenith angle
+        p0, p1, p2, z_ang = self.aerosol_visits[run]
+        # Reconstitute polynome
+        polynom = numpy.exp(p0 +
+                            p1 * numpy.log(self.modtran_wl) +
+                            p2 * numpy.log(self.modtran_wl) ** 2)
+        # Retrieve airmass from zenith angle
+        airmass = modtranTools.zenith2airmass(z_ang, site='lsst', unit='rad')
+        return numpy.exp(-1.0 * airmass * polynom)
