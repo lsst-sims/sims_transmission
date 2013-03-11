@@ -24,10 +24,9 @@ import os
 import MJDtools
 import modtranTools
 
-# default minimum meteo sequence step to 1/100 of a day
-_mjd_minstep = 0.01
-# default min points in spline
-_mjd_nmin = 100
+# Maximum number of simulated days
+# Currently limited by water vapor with 7 years
+_max_sim_days = 365. * 7
 _default_seed = 10
 _south_hem = ['Summer', 'Spring', 'Winter', 'Fall']
 _north_hem = ['Winter', 'Fall', 'Summer', 'Spring']
@@ -39,17 +38,14 @@ class Atmosphere(object):
     """
     def __init__(self, mjds, mjde, npoints, seed=_default_seed):
         """Initialize Atmosphere class"""
-        # Starting date
+        # Starting/ending date
         self.mjds = int(mjds) - 5
-        # Ending date
         self.mjde = int(mjde) + 5
-        # Number of visits
-        self.npoints = npoints
+        # Test for length
+        if (self.mjde-self.mjds) > _max_sim_days:
+            raise ValueError("Period probed too long for the whole simulation")
         # Seed for the randoms
         self.seed = seed
-
-        # Array for splines
-        # self._mjd_arr = numpy.array([])
         # Ozone spline
         self._o3_spl = None
         # Water vapor spline
@@ -59,48 +55,46 @@ class Atmosphere(object):
         self._aer_p1_spl = None
         self._aer_p2_spl = None
 
-        # self._initialized_array = False
-
-    def _init_mjdArray(self):
-        """Create mjd array to serve as base for splines"""
-        dmjd = float(self.mjde - self.mjds)
-        mjd_step = dmjd / self.npoints
-        if mjd_step < _mjd_minstep:
-            mjd_step = _mjd_minstep
-        nmjd = dmjd / float(mjd_step)
-        if nmjd < _mjd_nmin:
-            nmjd = _mjd_nmin
-        self._mjd_arr = numpy.linspace(self.mjds, self.mjde, nmjd)
-
-        # self._initialized_array = True
+    # def _init_mjdArray(self):
+    #     """Create mjd array to serve as base for splines"""
+    #     dmjd = float(self.mjde - self.mjds)
+    #     mjd_step = dmjd / self.npoints
+    #     if mjd_step < _mjd_minstep:
+    #         mjd_step = _mjd_minstep
+    #     nmjd = dmjd / float(mjd_step)
+    #     if nmjd < _mjd_nmin:
+    #         nmjd = _mjd_nmin
+    #     self._mjd_arr = numpy.linspace(self.mjds, self.mjde, nmjd)
 
     def _init_o3(self):
         """Initialize the atmospheric ozone sequence"""
         # self._o3_arr = numpy.zeros_like(self._mjd_arr)
-        data = self._simulate_o3()
-        # ids = MJDtools.MJDtoindex(self._mjd_arr[0], seas=True)
-        # ide = MJDtools.MJDtoindex(self._mjd_arr[-1], seas=True)
         ids = MJDtools.MJDtoindex(self.mjds, seas=True)
         ide = MJDtools.MJDtoindex(self.mjde, seas=True)
+        data = self._simulate_o3(ids, ide)
+        # ids = MJDtools.MJDtoindex(self._mjd_arr[0], seas=True)
+        # ide = MJDtools.MJDtoindex(self._mjd_arr[-1], seas=True)
         data_scaled = data[ids:ide]
         mjd_scaled = numpy.arange(data_scaled.size) + int(self.mjds)
         # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
         # self._o3_arr = data_spl(self._mjd_arr)
-        self._o3_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
+        self._o3_spl = scipy.interpolate.UnivariateSpline(
+            mjd_scaled, data_scaled)
 
-    def _simulate_o3(self):
-        """From satellite datasets, retrieve the main temporal
-        variability of ozone and simulate 8 years of daily data
-        """
-        transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/transmission/trunk/python/lsst/sims/atmosphere/transmission'
-        #transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
-        o3avg_file = os.path.join(transDir, 'datafiles/ozone8Yavg.npy')
-        #o3_file = os.path.join(transDir, 'datafiles/ozone8Ymasked.dat')
-        o3flat_file = os.path.join(transDir, 'datafiles/ozone8Yflatmasked.dat')
+    def _simulate_o3(self, ids, ide):
+        """From satellite datasets, retrieve the main temporal variability of
+        ozone and simulate 8 years of daily data"""
+        # transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/\
+        #     transmission/trunk/python/lsst/sims/atmosphere/transmission'
+        transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        o3avg_file = os.path.join(transDir, 'data/ozone8Yavg.npy')
+        #o3_file = os.path.join(transDir, 'data/ozone8Ymasked.dat')
+        o3flat_file = os.path.join(transDir, 'data/ozone8Yflatmasked.dat')
         # Get a smooth seasonal variation
         o3avg = numpy.load(o3avg_file)
         o3smooth = modtranTools.movingAverage(o3avg - numpy.median(o3avg), 60)
-        o3seasSpl = scipy.interpolate.InterpolatedUnivariateSpline(numpy.arange(365), o3smooth)
+        o3seasSpl = scipy.interpolate.InterpolatedUnivariateSpline(
+            numpy.arange(365), o3smooth)
         # Data corrected from seasonal var.
         flat_data = numpy.ma.load(o3flat_file)
         mean_data = numpy.mean(flat_data)
@@ -117,37 +111,42 @@ class Atmosphere(object):
         Fphase = numpy.cos(phi) + 1j*numpy.sin(phi)
         random_data = numpy.fft.ifft(Famp * Fphase)
         season = o3seasSpl(numpy.arange(ndays) % 365)
-        return numpy.real(random_data) + mean_data + season
+        res = numpy.real(random_data) + mean_data + season
+        return res[ids:ide]
 
     def _init_h2o(self):
         """Initialize the atmospheric water vapor sequence"""
-        self._h2o_arr = numpy.zeros_like(self.mjd_arr)
-        data = self._simulate_h2o()
-        ids = MJDtools.MJDtoindex(self.mjds, seas=None)
         # of data pts a day => factor scl
         scl = 2
-        data_scaled = data[scl*ids:]
+        ids = MJDtools.MJDtoindex(self.mjds, seas=None)
+        ide = MJDtools.MJDtoindex(self.mjde, seas=None)
+        data_scaled = self._simulate_h2o(scl*ids, scl*ide)
         mjd_scaled = numpy.arange(data_scaled.size)/float(scl) + int(self.mjds)
-        data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
-        self._h2o_arr = data_spl(self.mjd_arr)
+        # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
+        # self._h2o_arr = data_spl(self.mjd_arr)
+        self._h2o_spl = scipy.interpolate.UnivariateSpline(
+            mjd_scaled, data_scaled)
 
-    def _simulate_h2o(self):
+    def _simulate_h2o(self, ids, ide):
         """From satellite datasets, retrieve the main temporal variability of
         water vapor and simulate 7 years of data with 2 data points per day """
         # The computation is made in log
-        transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/transmission/trunk/python/lsst/sims/atmosphere/transmission'
-        #transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
-        wvavg_file = os.path.join(transDir, 'datafiles/wv7Yavgmasked.dat')
-        wvavg_stdfile = os.path.join(transDir, 'datafiles/wv7Ystdmasked.dat')
-        wvflat_file = os.path.join(transDir, 'datafiles/wv7Yflatmasked.dat')
+        # transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/\
+        #     transmission/trunk/python/lsst/sims/atmosphere/transmission'
+        transDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        wvavg_file = os.path.join(transDir, 'data/wv7Yavgmasked.dat')
+        wvavg_stdfile = os.path.join(transDir, 'data/wv7Ystdmasked.dat')
+        wvflat_file = os.path.join(transDir, 'data/wv7Yflatmasked.dat')
         # Get a smooth seasonal variation wv_mean(t)
         wvavg_ma = numpy.load(wvavg_file)
         wvsmooth = modtranTools.movingAverage(wvavg_ma, 60)
-        wvseasSpl = scipy.interpolate.InterpolatedUnivariateSpline(numpy.arange(2*365), wvsmooth)
+        wvseasSpl = scipy.interpolate.InterpolatedUnivariateSpline(
+            numpy.arange(2 * 365), wvsmooth)
         # Get a smooth standard deviation sigma_wv(t)
         wvstd_ma = numpy.load(wvavg_stdfile)
         wvstdsmooth = modtranTools.movingAverage(wvstd_ma, 60)
-        wvstdSpl = scipy.interpolate.InterpolatedUnivariateSpline(numpy.arange(2*365), wvstdsmooth)
+        wvstdSpl = scipy.interpolate.InterpolatedUnivariateSpline(
+            numpy.arange(2 * 365), wvstdsmooth)
         # Data corrected from seasonal variation and amplitude
         data = numpy.ma.load(wvflat_file)
         # FFT
@@ -163,12 +162,25 @@ class Atmosphere(object):
         random_data = numpy.fft.ifft(Famp * Fphase)
         season_range = wvseasSpl(numpy.arange(ndays) % (2 * 365))
         std_range = wvstdSpl(numpy.arange(ndays) % (2 * 365))
-        return numpy.exp(numpy.real(random_data) * std_range + season_range)
+        res = numpy.exp(numpy.real(random_data) * std_range + season_range)
+        return res[ids:ide]
 
     def _init_aer(self):
-        self.vis0 = numpy.zeros_like(self.mjd_arr)
-        self.visaz = numpy.zeros_like(self.mjd_arr)
-        self.visamp = numpy.zeros_like(self.mjd_arr)
+        # self.vis0 = numpy.zeros_like(self.mjd_arr)
+        # self.visaz = numpy.zeros_like(self.mjd_arr)
+        # self.visamp = numpy.zeros_like(self.mjd_arr)
+        ids = MJDtools.MJDtoindex(self.mjds, seas=None)
+        ide = MJDtools.MJDtoindex(self.mjde, seas=None)
+        data_p0, data_p1, data_p2 = self._simulate_aer(ids, ide)
+        mjd_scaled = numpy.arange(data_p0.size) + int(self.mjds)
+        self._aer_p0_spl = scipy.interpolate.UnivariateSpline(
+            mjd_scaled, data_p0)
+        self._aer_p1_spl = scipy.interpolate.UnivariateSpline(
+            mjd_scaled, data_p1)
+        self._aer_p2_spl = scipy.interpolate.UnivariateSpline(
+            mjd_scaled, data_p2)
+
+    def _simulate_aer(self, ids, ide):
         pass
 
     def init_main_parameters(self, nvulc=0):
@@ -224,6 +236,10 @@ class Atmosphere(object):
         ivulc[numpy.where(ivulc > 2)] = 2
         self._ivulc_arr = ivulc
 
+    def ivulc(self, idx):
+        """Volcanic aerosols"""
+        return self._ivulc_arr[idx]
+
     def iseas(self, idx, addName=None):
         """Season at Cerro Pachon site
            0 : Summer
@@ -236,10 +252,6 @@ class Atmosphere(object):
             return iseas, self._south_hem[iseas]
         else:
             return iseas
-
-    def ivulc(self, idx):
-        """Volcanic aerosols"""
-        return self._ivulc_arr[idx]
 
     def ivsa(self):
         """Switch on vertical structure algorith"""
