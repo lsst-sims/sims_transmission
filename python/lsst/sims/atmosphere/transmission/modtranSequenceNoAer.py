@@ -5,11 +5,20 @@ Class used to generate sequences of atmospheric parameters for input to MODTRAN.
 
 Calling method :
 --------------
-  seq = AtmosphereSequence('Opsim3.61.02.sel_parmlist.dat')
-  seq.generateParameters(seed=_default_seed)
+>>> seq = AtmosphereSequence('Opsim3.61.02.sel.dat')
+>>> seq.generateParameters(seed, 'atmos_database')
 
-  modtranDictList = seq.modtran_visits
-  modtranParameters = modtranDictList[i]
+=>  generates parameters for this particular pointing with the provided seed
+=>  saves the parameter list in $ATMOSPHERE_PARAMETERS_DIR/atmos_database.pck
+
+>>> seq = AtmosphereSequence()
+>>> seq.loadParameters('atmos_database.pck')
+Parameters for # runs computed with seed = X
+>>> seq.getAtmTrans('tmp', save=True)
+
+=> computes the atmospheric extinction in $MODTRAN_DATADIR/tmp/
+=> outputfiles in the form tmp.*
+=> saves the final transmission data into $MODTRAN_DATADIR/tmp/tmp_final.plt
 
 Description :
 -----------
@@ -30,8 +39,9 @@ live or saved into a file.
 
 To Lynne:
 ---------
-NEED TO HAVE THE ENVIRONNEMENT VARIABLE DEFINED : LSST_POINTING_DIR targetting
-the path where the pointing files are.
+NEED TO HAVE THE ENVIRONNEMENT VARIABLE DEFINED :
+- LSST_POINTING_DIR targetting the path where the pointing files are.
+- ATMOSPHERE_PARAMETERS_DIR targetting the parameter database
 
 """
 
@@ -154,7 +164,7 @@ class AtmosphereSequence(object):
         # Ending date
         self.mjde = self.opsim_visits[-1]['expMJD']
 
-    def generateParameters(self, seed=_default_seed):
+    def generateParameters(self, seed=_default_seed, output='atmos_db'):
         """Generate the atmospheric parameters over time.
         Returns a list of dictionaries containing the modtran
         information for each opsim visit (in the same order).
@@ -178,6 +188,14 @@ class AtmosphereSequence(object):
             modtran_dict = self.fillModtranDictionary(mjd, obsid, z_angle)
             self.modtran_visits.append(modtran_dict)
             self.aerosol_visits.append(self.atmos.aerosols(mjd) + (z_angle,))
+        if output:
+            megatupl = (self.modtran_visits, self.aerosol_visits,)
+            parmdir = os.getenv('ATMOSPHERE_PARAMETERS_DIR')
+            outname = output + '.pck'
+            parmpath = os.join.path(parmdir, outname)
+            with open(parmpath, 'w') as parmf:
+                pickle.dump(megatupl, parmf, seed)
+        # Done
 
     def fillModtranDictionary(self, mjd, obsid, z_angle):
         """Return a dictionary filled with all Modtran parameters
@@ -197,15 +215,22 @@ class AtmosphereSequence(object):
     def loadParameters(self, parmfile=''):
         """Load parameters for opsim visits to be computed with MODTRAN"""
         if not parmfile:
-            raise IOError("You need to specify a parameter filename with full path")
-        with open(parmfile, 'r') as parmf:
+            raise IOError("You need to specify a parameter filename")
+        parmdir = os.getenv('ATMOSPHERE_PARAMETERS_DIR')
+        parmpath = os.join.path(parmdir, parmfile)
+        # Read from file
+        with open(parmpath, 'r') as parmf:
             data = pickle.load(parmf)
         # Dictionary list
         self.modtran_visits = data[0]
         # Tuple list
         self.aerosol_visits = data[1]
+        # seed value
+        nruns = len(self.modtran_visits)
+        print 'Parameters for {1} runs computed with seed = {0}'.format(data[2],
+                                                                        nruns)
         # Init transmission array
-        self.initTransmissionArray(len(self.modtran_visits))
+        self.initTransmissionArray(nruns)
 
     def getAtmTrans(self, outfile='tmp', save=True):
         """Go through the process of getting an atmospheric transmission"""
