@@ -21,9 +21,9 @@ The AtmosphereSequence
 - calls the Atmosphere class in the modtranAtmos.py and generates atmospheric
 parameters for the given pointings,
 - writes those parameters in a file / database, (IN PROGRESS)
-- loads parameters from database on demand, (IN PROGRESS)
+- loads parameters from database on demand,
 - runs MODTRAN without the aerosols for each selected pointing (one at a time)
-and returns output, (QUITE)
+and returns output,
 - computes the aerosol extinction spectrum for the same pointings,
 - combines both spectra to output the final atmosphere transmission either
 live or saved into a file.
@@ -37,6 +37,7 @@ the path where the pointing files are.
 
 import numpy
 import os
+import pickle
 from lsst.sims.atmosphere.transmission.modtranAtmos import Atmosphere
 from lsst.sims.atmosphere.transmission.modtranCardsNoAer import ModtranCards
 import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
@@ -75,11 +76,6 @@ class AtmosphereSequence(object):
         # Transmittance array
         self.transmittance = numpy.array([])
 
-        # Internal monitoring attributes
-        self._initialized_sequence = False
-        self._initialized_parameters = False
-        self._initialized_extinction = False
-
     def readOpsimData(self):
         """Read the pointing file and return the content as a list
         of dictionaries called opsim_visits. The dictionary keys are
@@ -89,7 +85,6 @@ class AtmosphereSequence(object):
             good, string = self.checkOpsimData()
             if good:
                 self.opsim_visits = self.opsim_data
-                self._initialized_visits = True
             else:
                 raise Exception(string)
         elif self.opsim_filename:
@@ -147,7 +142,6 @@ class AtmosphereSequence(object):
         self.opsim_data = opsim_data
 
         self.opsim_visits = []
-        self._initialized_sequence = False
 
     def initPointingSequence(self):
         """Initialize input parameters for the atmospheric simulation."""
@@ -160,15 +154,12 @@ class AtmosphereSequence(object):
         # Ending date
         self.mjde = self.opsim_visits[-1]['expMJD']
 
-        self._initialized_sequence = True
-
     def generateParameters(self, seed=_default_seed):
         """Generate the atmospheric parameters over time.
         Returns a list of dictionaries containing the modtran
         information for each opsim visit (in the same order).
         """
-        if not self._initialized_sequence:
-            self.initPointingSequence()
+        self.initPointingSequence()
         # Instantiate the Atmosphere class
         self.atmos = Atmosphere(
             self.mjds, self.mjde, self.npoints, seed)
@@ -188,8 +179,6 @@ class AtmosphereSequence(object):
             self.modtran_visits.append(modtran_dict)
             self.aerosol_visits.append(self.atmos.aerosols(mjd) + (z_angle,))
 
-            self._initialized_parameters = True
-
     def fillModtranDictionary(self, mjd, obsid, z_angle):
         """Return a dictionary filled with all Modtran parameters
         for a given visit."""
@@ -205,22 +194,53 @@ class AtmosphereSequence(object):
         mdict['IHAZE'] = self.atmos.ihaze()
         return mdict
 
-    def runModtran(self):
+    def loadParameters(self, parmfile=''):
+        """Load parameters for opsim visits to be computed with MODTRAN"""
+        if not parmfile:
+            raise IOError("You need to specify a parameter filename with full path")
+        with open(parmfile, 'r') as parmf:
+            data = pickle.load(parmf)
+        # Dictionary list
+        self.modtran_visits = data[0]
+        # Tuple list
+        self.aerosol_visits = data[1]
+        # Init transmission array
+        self.initTransmissionArray(len(self.modtran_visits))
+
+    def getAtmTrans(self, outfile='tmp', save=True):
+        """Go through the process of getting an atmospheric transmission"""
+        # Set the name of MODTRAN output file
+        self.outfilename = outfile
+        # Loop over the MODTRAN runs
+        for run in xrange(len(self.modtran_visits)):
+            self.runModtran(run)
+            # Read MODTRAN output
+            modtrans = self.getModtranExtinction()
+            # Compute aerosols transmission
+            aertrans = self.getAerTransmittance(run)
+            # Multiply both to get full transmission
+            self.transmittance[run] = modtrans * aertrans
+
+        if save:
+            self.saveTrans()
+        # Data saved into a file named '%s_final.plt' % self.outfilename
+
+    def runModtran(self, run):
         """Call the modtranCards class in order to run MODTRAN for
         selected visits"""
-        if not self._initialized_parameters:
-            self.generateParameters()
-
         # Call for the MODTRAN card class
         modcard = ModtranCards()
         modcard.setDefaults()
-        # TODO : check the length of the visits to call for separate MODTRAN runs
         # Write the cards to the disk
-        modcard.writeModtranCards(self.modtran_visits, self.outfilename)
-        # TODO : wait for file to be completely written before running MODTRAN
+        modcard.writeModtranCards(self.modtran_visits[run], self.outfilename)
         modcard.runModtran()
 
-        self._initialized_extinction = True
+    def initTransmissionArray(self, nruns):
+        """Initialize class attribute for atmospheric transmission"""
+        if not self.modtran_wl:
+            self.initModtranWavelengths()
+
+        self.transmittance = numpy.zeros((nruns, len(self.modtran_wl)))
 
     def initModtranWavelengths(self):
         "Load in memory the tabulated wavelengths at which MODTRAN outputs data"
@@ -228,11 +248,9 @@ class AtmosphereSequence(object):
         modtranwfile = os.path.join(main_dir, 'data/modwl.txt')
         self.modtran_wl = numpy.loadtxt(modtranwfile)
 
-    def getModtranExtinction(self, outfileRoot='tmp'):
+    def getModtranExtinction(self):
         """Read MODTRAN atmosphere extinction output file '.plt' and store the
         runs into a 2D array"""
-        if not self._initialized_extinction:
-            self.runModtran()
         if not self.modtran_wl:
             self.initModtranWavelengths()
 
@@ -240,46 +258,39 @@ class AtmosphereSequence(object):
         # MODTRAN transmission outputfile
         outputfile = '{0}/{1}.plt'.format(self.outfilename, self.outfilename)
         outputpath = os.path.join(modtranDataDir, outputfile)
-        # Initialize transmittance array for each run
-        self.transmittance = numpy.zeros((len(self.modtran_visits),
-                                          len(self.modtran_wl)))
+        # Initialize array for transmittance
+        trans = numpy.zeros(len(self.modtran_wl))
         with open(outputpath, 'r') as outf:
             # File starts with data - no header
-            run = 0
             # I use negative indices because MODTRAN prints the wavelengths
             # in decreasing order
             idx = -1
             for line in outf:
                 if line.starstwith('$'):
-                    run += 1
-                    idx = -1
                     continue
                 values = line.strip().split()
-                self.transmittance[run][idx] = float(values[1])
+                trans[idx] = float(values[1])
                 idx -= 1
+        return trans
         # MODTRAN transmittance stored
 
-    def addAerExtinction(self, save=True):
-        """Add the aerosol extinction to the MODTRAN computed extinction"""
-        if not self.transmittance:
-            self.getModtranExtinction()
+    def saveTrans(self):
+        """Save full extinction into an ascii file
 
-        # Multiply both transmittances for each run
-        for run in xrange(len(self.modtran_visits)):
-            self.transmittance[run] *= self.getAerTransmittance(run)
-        # Save the result into an ascii file
-        if save:
-            modtranDataDir = os.getenv('MODTRAN_DATADIR')
-            outputfile = '{0}/{1}_final.plt'.format(
-                self.outfilename, self.outfilename)
-            outputpath = os.path.join(modtranDataDir, outputfile)
-            with open(outputpath, 'w') as transmf:
-                transmf.write('$ FINAL ATMOSPHERE TRANSMISSION\n')
-                for val in xrange(len(self.modtran_wl)):
-                    data = '\t'.join('{0:f}'.format(self.transmittance[run][val])
-                                     for run in xrange(len(self.modtran_wl)))
-                    line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
-                    transmf.write(line)
+        The structure is:
+            wavelength transm[run1] transm[run2] transm[run3] etc.
+        """
+        modtranDataDir = os.getenv('MODTRAN_DATADIR')
+        outputfile = '{0}/{1}_final.plt'.format(
+            self.outfilename, self.outfilename)
+        outputpath = os.path.join(modtranDataDir, outputfile)
+        with open(outputpath, 'w') as transmf:
+            transmf.write('$ FINAL ATMOSPHERE TRANSMISSION\n')
+            for val in xrange(len(self.modtran_wl)):
+                data = '\t'.join('{0:f}'.format(self.transmittance[run][val])
+                                 for run in xrange(len(self.modtran_wl)))
+                line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
+                transmf.write(line)
 
     def getAerTransmittance(self, run):
         """Compute the atmospheric transmittance due to aerosols"""
