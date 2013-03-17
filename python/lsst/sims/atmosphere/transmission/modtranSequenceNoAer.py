@@ -29,7 +29,7 @@ The AtmosphereSequence
 - initializes a pointing sequence by defining the date boundaries,
 - calls the Atmosphere class in the modtranAtmos.py and generates atmospheric
 parameters for the given pointings,
-- writes those parameters in a file / database, (IN PROGRESS)
+- writes those parameters in a file / database (using the pickle module),
 - loads parameters from database on demand,
 - runs MODTRAN without the aerosols for each selected pointing (one at a time)
 and returns output,
@@ -322,12 +322,14 @@ class AtmosphereSequence(object):
         if not self.modtran_wl:
             self.initModtranWavelengths()
 
+        # Compute Vandermonde matrix
+        # degree is hardcoded but only 2nd degree polynomial is used
+        vdm_wl = numpy.vander(self.modtran_wl, 3)
         # Get polynomial roots as well as zenith angle
         p0, p1, p2, z_ang = self.aerosol_visits[run]
-        # Reconstitute polynome
-        polynom = numpy.exp(p0 +
-                            p1 * numpy.log(self.modtran_wl) +
-                            p2 * numpy.log(self.modtran_wl) ** 2)
+        pfit = numpy.array([p0, p1, p2])
+        # Reconstitute polynom
+        polynom = numpy.dot(vdm_wl, pfit)
         # Retrieve airmass from zenith angle
         airmass = modtranTools.zenith2airmass(z_ang, site='lsst', unit='rad')
         return numpy.exp(-1.0 * airmass * polynom)
