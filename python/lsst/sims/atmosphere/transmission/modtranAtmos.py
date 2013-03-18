@@ -21,8 +21,9 @@ import numpy
 import scipy
 import os
 
-import MJDtools
-import modtranTools
+import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
+import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
+from lsst.sims.atmosphere.transmission.aerSim import getAerParameters
 
 # Maximum number of simulated days
 # Currently limited by water vapor with 7 years
@@ -166,12 +167,9 @@ class Atmosphere(object):
         return res[ids:ide]
 
     def _init_aer(self):
-        # self.vis0 = numpy.zeros_like(self.mjd_arr)
-        # self.visaz = numpy.zeros_like(self.mjd_arr)
-        # self.visamp = numpy.zeros_like(self.mjd_arr)
         ids = MJDtools.MJDtoindex(self.mjds, seas=None)
         ide = MJDtools.MJDtoindex(self.mjde, seas=None)
-        data_p0, data_p1, data_p2 = self._simulate_aer(ids, ide)
+        data_p0, data_p1, data_p2, stdev = self._simulate_aer(ids, ide)
         mjd_scaled = numpy.arange(data_p0.size) + int(self.mjds)
         self._aer_p0_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_p0)
@@ -181,7 +179,11 @@ class Atmosphere(object):
             mjd_scaled, data_p2)
 
     def _simulate_aer(self, ids, ide):
-        pass
+        """Simulate the aerosol optical depth as a function of wavelength
+        and return 2nd degree polynomial fitting parameters
+        (cf. aerSim.py for more info)"""
+        data = getAerParameters(self.seed, airmass='0')
+        return data[ids:ide]
 
     def init_main_parameters(self, nvulc=0):
         """Initialize the main atmospheric parameters"""
