@@ -2,11 +2,11 @@
 # -*- coding: utf-8 -*-
 import os
 import numpy as np
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 import numpy.fft as npf
 import numpy.random as npr
 import numpy.linalg as npl
-from scipy.interpolate import InterpolatedUnivariateSpline, splev, splrep
+from scipy.interpolate import InterpolatedUnivariateSpline  # , splev, splrep
 
 # LOCAL
 #------
@@ -287,108 +287,168 @@ def randomize(eigenvals, eigenvect, seed=10):
 # FITTING
 #--------
 
+def main(seed=10):
+    master_vect, nfreq = vectorize(aerstr, amstr)
+    # print master_vect
+    npar = master_vect.shape[0]
+    #print 'Vector shape: %d x %d' % (npar, nfreq)
+    master_rand = np.zeros((npar, nfreq + 1), dtype='complex')
+    master_out = np.zeros((npar, nfreq * 2))
+    covariance_matrix = covariance(master_vect)
+    # covariance_matrix = np.outer(master_vect, np.conj(master_vect))
+    eigenvalues, eigenvectors = npl.eigh(covariance_matrix)
+    # print 'Covariance Matrix:\n', covariance_matrix
+    # print 'Eigenvalues:\n', eigenvalues
+    # print 'Eigenvectors:\n', eigenvectors
+    npr.seed(seed)
+    sprseed = npr.randint(0, 100000, nfreq)
+    for freq in xrange(nfreq):
+        master_rand[:, freq] = randomize(eigenvalues, eigenvectors, sprseed[freq])
+    for par in xrange(npar):
+        master_out[par] = npf.irfft(master_rand[par])
+    out_dict = vector2dict(master_out, log=True)
+    return out_dict
+
+
+def getAerParameters(seed=10, airmass='0'):
+    """Return a vector containing the daily fitting parameters for aerosols
+    at Cerro Pachon for 13 years
+
+    bonus: write a temporary file containing the data"""
+    if type(airmass) == int:
+        airmass = str(airmass)
+    # Get simulated parameters in a dictionary
+    outdict = main(seed)
+    # Cast them into a vector
+    outvect = np.zeros((N_DAYS - 1, len(aerstr)))
+    for iwl, wl in enumerate(aerstr):
+        outvect[:, iwl] = outdict[wl][airmass]
+    # Construct the Vandermonde matrix for standard deviation on the datapoints
+    vx = np.vander(laer_wl, P_DEG + 1)
+    # Create temporary file to store the results
+    tmpfile = open('tempfile.dat', 'w')
+    strhead = '#Time [day]\tAirmass bin\tp0\tp1\tp2\tstdev\n\
+        #Seed used for this simulation = {0:d}\n'.format(seed)
+    tmpfile.write(strhead)
+    # initialize vector for fitting parameters
+    fitvect = np.zeros((N_DAYS - 1, 4))
+    for day in xrange(N_DAYS - 1):
+        lvect = outvect[day]
+        # Fit
+        pfit = np.polyfit(laer_wl, lvect, P_DEG)
+        # Standard deviation
+        stdev = np.std(lvect - np.dot(vx, pfit))
+        # Store in vector
+        fitvect[day] = np.array([pfit[0], pfit[1], pfit[2], stdev])
+        # Write in file
+        strline = '{0:d}\t{1:s}\t{2:.6f}\t{3:.6f}\t{4:.6f}\t{0:.6f}\n'.format(
+            day, airmass, pfit[0], pfit[1], pfit[2], stdev)
+        tmpfile.write(strline)
+    tmpfile.close()
+    return fitvect
+
 
 # PLOTTING
 #---------
 
-def plot_spectrum(wl, ambin):
-    data = npf.rfft(dailydict[str(wl)][str(ambin)]['laer_final'])
-    k = npf.fftfreq(N_DAYS)
-    xplot = npf.fftshift(1. / k)
-    xplot = xplot[2372:]
-    fnorm = data / N_DAYS
-    fplot = np.abs(npf.fftshift(fnorm))
-    print len(xplot)
-    print len(fplot)
-    plt.plot(xplot, fplot)
-    plt.xlim(0, 200)
-    plt.ylim(0, 0.04)
-    plt.show()
+# def plot_spectrum(wl, ambin):
+#     data = npf.rfft(dailydict[str(wl)][str(ambin)]['laer_final'])
+#     k = npf.fftfreq(N_DAYS)
+#     xplot = npf.fftshift(1. / k)
+#     xplot = xplot[2372:]
+#     fnorm = data / N_DAYS
+#     fplot = np.abs(npf.fftshift(fnorm))
+#     print len(xplot)
+#     print len(fplot)
+#     plt.plot(xplot, fplot)
+#     plt.xlim(0, 200)
+#     plt.ylim(0, 0.04)
+#     plt.show()
 
 
-def plot_histograms(fdict, pltbins):
-    f, ax = plt.subplots(3, 2, sharex=True, sharey=True)
-    for idx, wl in enumerate(aerstr):
-        ix, iy = idx % 3, idx / 3
-        dat = np.array([])
-        sim = np.array([])
-        for am in amstr:
-            dat = np.hstack((dat, np.exp(dailydict[wl][am]['laer_days'])))
-            sim = np.hstack((sim, fdict[wl][am]))
-        ax[ix, iy].hist(dat, normed=True, bins=pltbins, alpha=0.4,
-                        histtype='stepfilled', label='original data')
-        ax[ix, iy].hist(sim, normed=True, bins=pltbins, alpha=0.4,
-                        histtype='stepfilled', label='simulated data')
-        ax[ix, iy].set_title(r'$\tau_{%s}$' % wl)
-    ax[1, 1].legend(loc=1)
-    # plt.legend(('original data', 'simulated data'), loc=1)
-    plt.xlim(0, 0.1)
-    plt.show()
+# def plot_histograms(fdict, pltbins):
+#     f, ax = plt.subplots(3, 2, sharex=True, sharey=True)
+#     for idx, wl in enumerate(aerstr):
+#         ix, iy = idx % 3, idx / 3
+#         dat = np.array([])
+#         sim = np.array([])
+#         for am in amstr:
+#             dat = np.hstack((dat, np.exp(dailydict[wl][am]['laer_days'])))
+#             sim = np.hstack((sim, fdict[wl][am]))
+#         ax[ix, iy].hist(dat, normed=True, bins=pltbins, alpha=0.4,
+#                         histtype='stepfilled', label='original data')
+#         ax[ix, iy].hist(sim, normed=True, bins=pltbins, alpha=0.4,
+#                         histtype='stepfilled', label='simulated data')
+#         ax[ix, iy].set_title(r'$\tau_{%s}$' % wl)
+#     ax[1, 1].legend(loc=1)
+#     # plt.legend(('original data', 'simulated data'), loc=1)
+#     plt.xlim(0, 0.1)
+#     plt.show()
 
 
-def plot_data_vs_daily(pltbins):
-    f, ax = plt.subplots(3, 2, sharex=True, sharey=True)
-    for idx, wl in enumerate(aerstr):
-        ix, iy = idx % 3, idx / 3
-        dat = np.array([])
-        for am in amstr:
-            dat = np.hstack((dat, np.exp(dailydict[wl][am]['laer_days'])))
-        ax[ix, iy].hist(aerlist[idx], normed=True, bins=pltbins, alpha=0.4,
-                        histtype='stepfilled', label='full data')
-        ax[ix, iy].hist(dat, normed=True, bins=pltbins, alpha=0.4,
-                        histtype='stepfilled', label='daily data')
-        ax[ix, iy].set_title(r'$\tau_{%s}$' % wl)
-    ax[1, 1].legend(loc=1)
-    # plt.legend(('original data', 'simulated data'), loc=1)
-    plt.xlim(0, 0.2)
-    plt.show()
+# def plot_data_vs_daily(pltbins):
+#     f, ax = plt.subplots(3, 2, sharex=True, sharey=True)
+#     for idx, wl in enumerate(aerstr):
+#         ix, iy = idx % 3, idx / 3
+#         dat = np.array([])
+#         for am in amstr:
+#             dat = np.hstack((dat, np.exp(dailydict[wl][am]['laer_days'])))
+#         ax[ix, iy].hist(aerlist[idx], normed=True, bins=pltbins, alpha=0.4,
+#                         histtype='stepfilled', label='full data')
+#         ax[ix, iy].hist(dat, normed=True, bins=pltbins, alpha=0.4,
+#                         histtype='stepfilled', label='daily data')
+#         ax[ix, iy].set_title(r'$\tau_{%s}$' % wl)
+#     ax[1, 1].legend(loc=1)
+#     # plt.legend(('original data', 'simulated data'), loc=1)
+#     plt.xlim(0, 0.2)
+#     plt.show()
 
 
 # I/O
 #----
 
-def write_daily_values():
-    amlist = ['2.0', '3.0', '4.0']
-    headerlist = ['time', 'airmass', 'tau_870', 'tau_675',
-                  'tau_500', 'tau_440', 'tau_380']
-    header = '\t'.join(h for h in headerlist)
-    with open('daily_aerosols.dat', 'w') as daer:
-        daer.write('%s\n' % header)
-        for day in xrange(N_DAYS):
-            for am in xrange(3):
-                line = '\t'.join('%.4f' % np.exp(
-                    dailydict[wl][str(am)]['laer_days'][day])
-                    for wl in aerstr[::-1])
-                daer.write('%d\t%s\t%s\n' % (day, amlist[am], line))
-    print 'DONE'
+# def write_daily_values():
+#     amlist = ['2.0', '3.0', '4.0']
+#     headerlist = ['time', 'airmass', 'tau_870', 'tau_675',
+#                   'tau_500', 'tau_440', 'tau_380']
+#     header = '\t'.join(h for h in headerlist)
+#     with open('daily_aerosols.dat', 'w') as daer:
+#         daer.write('%s\n' % header)
+#         for day in xrange(N_DAYS):
+#             for am in xrange(3):
+#                 line = '\t'.join('%.4f' % np.exp(
+#                     dailydict[wl][str(am)]['laer_days'][day])
+#                     for wl in aerstr[::-1])
+#                 daer.write('%d\t%s\t%s\n' % (day, amlist[am], line))
+#     print 'DONE'
 
 
-def write_simulated_values(simul, finaldict):
-    amlist = ['2.0', '3.0', '4.0']
-    headerlist = ['time', 'airmass', 'tau_870', 'tau_675',
-                  'tau_500', 'tau_440', 'tau_380']
-    header = '\t'.join(h for h in headerlist)
-    with open('simulated_aerosols.dat', 'w') as faer:
-        faer.write('%s\n' % header)
-        for day in xrange(simul.shape[1]):
-            for am in xrange(3):
-                line = '\t'.join('%.4f' % finaldict[wl][str(am)][day]
-                                 for wl in aerstr[::-1])
-                faer.write('%d\t%s\t%s\n' % (day, amlist[am], line))
-    print 'DONE'
+# def write_simulated_values(simul, finaldict):
+#     amlist = ['2.0', '3.0', '4.0']
+#     headerlist = ['time', 'airmass', 'tau_870', 'tau_675',
+#                   'tau_500', 'tau_440', 'tau_380']
+#     header = '\t'.join(h for h in headerlist)
+#     with open('simulated_aerosols.dat', 'w') as faer:
+#         faer.write('%s\n' % header)
+#         for day in xrange(simul.shape[1]):
+#             for am in xrange(3):
+#                 line = '\t'.join('%.4f' % finaldict[wl][str(am)][day]
+#                                  for wl in aerstr[::-1])
+#                 faer.write('%d\t%s\t%s\n' % (day, amlist[am], line))
+#     print 'DONE'
 
 
-def write_scaled_data():
-    headerlist = ['time', 'airmass', 'tau_870', 'tau_675',
-                  'tau_500', 'tau_440', 'tau_380']
-    header = '\t'.join(h for h in headerlist)
-    with open('casleolike_aerosols.dat', 'w') as faer:
-        faer.write('%s\n' % header)
-        for day in xrange(N_MJD):
-            line = '\t'.join('%.4f' % np.exp(laer_masterdict[wl][day])
-                             for wl in aerstr[::-1])
-            faer.write('%.3f\t%.2f\t%s\n' % (maindict['mjd'][day], maindict['airmass'][day], line))
-    print 'DONE'
+# def write_scaled_data():
+#     headerlist = ['time', 'airmass', 'tau_870', 'tau_675',
+#                   'tau_500', 'tau_440', 'tau_380']
+#     header = '\t'.join(h for h in headerlist)
+#     with open('casleolike_aerosols.dat', 'w') as faer:
+#         faer.write('%s\n' % header)
+#         for day in xrange(N_MJD):
+#             line = '\t'.join('%.4f' % np.exp(laer_masterdict[wl][day])
+#                              for wl in aerstr[::-1])
+#             faer.write('%.3f\t%.2f\t%s\n' % (maindict['mjd'][day], maindict['airmass'][day], line))
+#     print 'DONE'
 
 
 ####################
@@ -419,6 +479,8 @@ saerlist = [scale(aer) for aer in aerlist]
 laerlist = [np.log(aer) for aer in saerlist]
 # put in a dictionary
 laer_masterdict = dict(zip(aerstr, laerlist))
+# wavelength in log
+laer_wl = np.array([np.log(int(aer)) for aer in aerstr], dtype='float')
 
 # for i, arr in enumerate(aerlist):
     # print 'Wavelength:\t{0}'.format(aerstr[i])
@@ -459,110 +521,57 @@ for wl in aerstr:
         dailydict[wl][iam] = get_dict(wl, iam)
 # dictlist = ['laer_days', 'laer_yspl', 'laer_final']
 
-
-def main(seed=10):
-    master_vect, nfreq = vectorize(aerstr, amstr)
-    # print master_vect
-    npar = master_vect.shape[0]
-    #print 'Vector shape: %d x %d' % (npar, nfreq)
-    master_rand = np.zeros((npar, nfreq + 1), dtype='complex')
-    master_out = np.zeros((npar, nfreq * 2))
-    covariance_matrix = covariance(master_vect)
-    # covariance_matrix = np.outer(master_vect, np.conj(master_vect))
-    eigenvalues, eigenvectors = npl.eigh(covariance_matrix)
-    # print 'Covariance Matrix:\n', covariance_matrix
-    # print 'Eigenvalues:\n', eigenvalues
-    # print 'Eigenvectors:\n', eigenvectors
-    npr.seed(seed)
-    sprseed = npr.randint(0, 100000, nfreq)
-    for freq in xrange(nfreq):
-        master_rand[:, freq] = randomize(eigenvalues, eigenvectors, sprseed[freq])
-    for par in xrange(npar):
-        master_out[par] = npf.irfft(master_rand[par])
-    out_dict = vector2dict(master_out, log=True)
-    return out_dict
-
 ###########
 # TESTING #
 ###########
-nval = N_DAYS - 1
+
+# nval = 30
 # imin = 650
 # imax = imin + nval
-outdict = main()
-am = '0'
+# outdict = main()
+# am = '0'
+# numesh = np.arange(NU_MIN, NU_MAX, NU_STEP)
+# lsstwl = 1.e7 / numesh  # convert frequencies (cm-1)into wvlength (nm)
+# lwv = np.log(lsstwl)
 
+# vcur = np.vander(lwv, P_DEG + 1)
 
+# testarr = np.zeros((nval, len(aerstr)))
+# for iwl, wl in enumerate(aerstr):
+#     # testarr[:, iwl] = outdict[wl][am][imin:imax]
+#     testarr[:, iwl] = outdict[wl][am]
 
-numesh = np.arange(NU_MIN, NU_MAX, NU_STEP)
-lsstwl = 1.e7 / numesh  # convert frequencies (cm-1)into wvlength (nm)
-lwv = np.log(lsstwl)
-
-vcur = np.vander(lwv, P_DEG + 1)
-
-testarr = np.zeros((nval, len(aerstr)))
-for iwl, wl in enumerate(aerstr):
-    # testarr[:, iwl] = outdict[wl][am][imin:imax]
-    testarr[:, iwl] = outdict[wl][am]
-
-laer_wl = np.array([np.log(int(aer)) for aer in aerstr], dtype='float')
 # Construct the Vandermonde matrix for standard deviation
-vx = np.vander(laer_wl, P_DEG + 1)
-aer_wl = np.exp(laer_wl)
+# vx = np.vander(laer_wl, P_DEG + 1)
+# aer_wl = np.exp(laer_wl)
 
-col = ['b', 'r', 'm', 'g', 'c']
+# col = ['b', 'r', 'm', 'g', 'c']
+# xplot = np.arange(N_DAYS - 1)
+# xplot2 = np.arange(0, N_DAYS - 1, 0.5)
 
-# fig = plt.figure()
-# ax = fig.add_subplot(133)
-f, ax = plt.subplots(3, 2, sharex=True)
+# f, ax = plt.subplots(3, 2, sharex=True)
+# pf = np.zeros((nval, 3))
+# for day in xrange(nval):
+#     lvect = testarr[day]
+#     # Fit
+#     pfit = np.polyfit(laer_wl, lvect, P_DEG)
+#     pf[day] = pfit
 
-p0 = []
-p1 = []
-p2 = []
-fitheader = '#Time [day]\tAirmass bin\tp0\tp1\tp2\tstdev\n'
-for day in xrange(nval):
-    lvect = testarr[day]
-    # Fit
-    pfit = np.polyfit(laer_wl, lvect, P_DEG)
-    strline = '{0:d}\t{1:s}\t{2:.6f}\t{3:.6f}\t{4:.6f}'.format(day, am, *pfit)
-    # Standard deviation
-    stdev = np.std(lvect - np.dot(vx, pfit))
-    strline += '\t{0:.6f}\n'.format(stdev)
-    pol = np.exp(np.dot(vcur, pfit))
-    # print strline
-    # ax.plot(aer_wl, np.exp(lvect), col[day % 5] + '+',
-    #         # lsstwl, np.exp(-1 * polynom), col[day % 5],
-    #         lsstwl, pol2, col[day % 5] + '--')
-    # ax.plot(lsstwl, np.exp(-1.0 * pol2), col[day % 5] + ',')
-    p0.append(pfit[0])
-    p1.append(pfit[1])
-    p2.append(pfit[2])
+# p0 = pf[:, 0]
+# p1 = pf[:, 1]
+# p2 = pf[:, 2]
+# p0sp = splrep(xplot, p0)
+# p1sp = splrep(xplot, p1)
+# p2sp = splrep(xplot, p2)
+# p02 = splev(xplot2, p0sp)
+# p12 = splev(xplot2, p1sp)
+# p22 = splev(xplot2, p2sp)
 
-xplot = np.arange(N_DAYS - 1)
+# ax[0, 0].plot(p0, 'r,')
+# ax[1, 0].plot(p1, 'b,')
+# ax[2, 0].plot(p2, 'g,')
+# ax[0, 1].plot((p02-p0)/p0, 'r,')
+# ax[1, 1].plot((p12-p1)/p1, 'b,')
+# ax[2, 1].plot((p22-p2)/p2, 'g,')
 
-p0 = np.array(p0)
-p1 = np.array(p1)
-p2 = np.array(p2)
-
-# p0spl = UnivariateSpline(xplot, p0)
-# p1spl = UnivariateSpline(xplot, p1)
-# p2spl = UnivariateSpline(xplot, p2)
-
-p0sp = splrep(xplot, p0)
-p1sp = splrep(xplot, p1)
-p2sp = splrep(xplot, p2)
-
-p02 = splev(xplot, p0sp)
-p12 = splev(xplot, p1sp)
-p22 = splev(xplot, p2sp)
-
-ax[0, 0].plot(p0, 'r,')
-ax[1, 0].plot(p1, 'b,')
-ax[2, 0].plot(p2, 'g,')
-ax[0, 1].plot((p02-p0)/p0, 'r,')
-ax[1, 1].plot((p12-p1)/p1, 'b,')
-ax[2, 1].plot((p22-p2)/p2, 'g,')
-# ax[0, 1].plot((p0spl(xplot)-p0)/p0, 'r,')
-# ax[1, 1].plot((p1spl(xplot)-p1)/p1, 'b,')
-# ax[2, 1].plot((p2spl(xplot)-p2)/p2, 'g,')
-
-plt.show()
+# plt.show()
