@@ -43,6 +43,9 @@ NEED TO HAVE THE ENVIRONNEMENT VARIABLE DEFINED :
 - LSST_POINTING_DIR targetting the path where the pointing files are.
 - ATMOSPHERE_PARAMETERS_DIR targetting the parameter database
 
+Need to check if MODTRAN output wavelengths are the same for version 4 and 5
+=> cf. modwl.txt
+
 """
 
 import numpy
@@ -268,9 +271,10 @@ class AtmosphereSequence(object):
         self.transmittance = numpy.zeros((nruns, len(self.modtran_wl)))
 
     def initModtranWavelengths(self):
-        "Load in memory the tabulated wavelengths at which MODTRAN outputs data"
+        """Load in memory the sorted tabulated wavelengths in nanometers at which
+        MODTRAN outputs data."""
         main_dir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
-        modtranwfile = os.path.join(main_dir, 'data/modwl.txt')
+        modtranwfile = os.path.join(main_dir, 'data/modtranwl.txt')
         self.modtran_wl = numpy.loadtxt(modtranwfile)
 
     def getModtranExtinction(self):
@@ -296,6 +300,9 @@ class AtmosphereSequence(object):
                 values = line.strip().split()
                 trans[idx] = float(values[1])
                 idx -= 1
+                if abs(idx) > len(self.modtran_wl):
+                    raise ValueError("Too many values to unpack from MODTRAN \
+                        outputfile.")
         return trans
         # MODTRAN transmittance stored
 
