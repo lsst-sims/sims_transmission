@@ -55,7 +55,7 @@ class Atmosphere(object):
         self._aer_p0_spl = None
         self._aer_p1_spl = None
         self._aer_p2_spl = None
-
+        
     # def _init_mjdArray(self):
     #     """Create mjd array to serve as base for splines"""
     #     dmjd = float(self.mjde - self.mjds)
@@ -169,7 +169,8 @@ class Atmosphere(object):
     def _init_aer(self):
         ids = MJDtools.MJDtoindex(self.mjds, seas=None)
         ide = MJDtools.MJDtoindex(self.mjde, seas=None)
-        data_p0, data_p1, data_p2, stdev = self._simulate_aer(ids, ide)
+        data = self._simulate_aer(ids, ide)
+        data_p0, data_p1, data_p2, stdev = data.T
         mjd_scaled = numpy.arange(data_p0.size) + int(self.mjds)
         self._aer_p0_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_p0)
@@ -183,7 +184,8 @@ class Atmosphere(object):
         and return 2nd degree polynomial fitting parameters
         (cf. aerSim.py for more info)"""
         data = getAerParameters(self.seed, airmass='0')
-        return data[ids:ide]
+        arrdata = numpy.array(data)
+        return arrdata[ids:ide]
 
     def init_main_parameters(self, nvulc=0):
         """Initialize the main atmospheric parameters"""
