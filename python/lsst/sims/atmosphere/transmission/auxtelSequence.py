@@ -77,9 +77,9 @@ class AuxTelSequence(object):
         # List of aerosol parameters
         self.aerosol_visits = []
         # MODTRAN wavelengths array
-        self.modtran_wl = np.array([])
+        self.modtran_wl = []
         # Transmittance array
-        self.transmittance = np.array([])
+        self.transmittance = []
 
     def changeList(self, newlist):
         """Input a new sequence list."""
@@ -90,9 +90,9 @@ class AuxTelSequence(object):
         # Number of visits
         self.npoints = len(self.visits)
         # Starting date
-        self.mjds = self.visits[0]['expMJD']
+        self.mjds = self.visits[0]['MJD']
         # Ending date
-        self.mjde = self.visits[-1]['expMJD']
+        self.mjde = self.visits[-1]['MJD']
 
     def generateParameters(self, seed=_default_seed):
         """Generate the atmospheric parameters over time.
@@ -110,13 +110,14 @@ class AuxTelSequence(object):
             # Get ID and date
             vis_id = visit_dict['ID']
             mjd = visit_dict['MJD']
-            z_angle = visit_dict['Z']
+            z_angle = visit_dict['ZANG']
             # Get atmosphere parameters
             modtran_dict = self.fillModtranDictionary(mjd, vis_id, z_angle)
             self.modtran_visits.append(modtran_dict)
             self.aerosol_visits.append(self.atmos.aerosols(mjd) + (z_angle,))
         # Init transmission array
         self.initTransmissionArray(len(self.modtran_visits))
+        print 'generateParameters FIN'
 
     def fillModtranDictionary(self, mjd, obsid, z_angle):
         """Return a dictionary filled with all Modtran parameters
@@ -180,7 +181,8 @@ class AuxTelSequence(object):
     def getModtranExtinction(self):
         """Read MODTRAN atmosphere extinction output file '.plt' and store the
         runs into a 2D array"""
-        if not self.modtran_wl:
+        print  self.modtran_wl
+        if len(self.modtran_wl)==0:
             self.initModtranWavelengths()
 
         modtranDataDir = os.getenv('MODTRAN_DATADIR')
