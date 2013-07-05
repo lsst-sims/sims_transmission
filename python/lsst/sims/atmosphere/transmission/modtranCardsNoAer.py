@@ -229,12 +229,12 @@ class ModtranCards(object):
             # Change modtran Data Dir
             # This line should be 2 if the band model is not being specified;
             # 3 if it is.
-            card[3] = '{0}\n'.format(modtranDataDir)
+            #card[3] = '{0}\n'.format(modtranDataDir)
             # Add continuation card value.
             contline = '{0}{1}{2}'.format(card[continuation_cardline][:4],
                                           continuation_cardvalue[irun],
                                           card[continuation_cardline][5:])
-            card[continuation_cardline] = contline
+            card[continuation_cardline-1] = contline
             # Add Card2A and/or Card 2B if needed, inserting into the input file
             # at line ('rank') 6
             # And add these lines into the modtran input file at line ('rank') 6
@@ -252,7 +252,7 @@ class ModtranCards(object):
             #self._printCards(allcards)
         # Write data to output.
         outfile = os.path.join(modtranDataDir, outfileRoot)
-        with open(outfile + '.tp5', 'w') as cardf:
+        with open(os.path.join(outfile,outfileRoot) + '.tp5', 'w') as cardf:
             for run in allcards:
                 for card in run:
                     cardf.write(card)
@@ -261,18 +261,21 @@ class ModtranCards(object):
         """Spawn a shell process to run MODTRAN on the input file
         in outfileRoot. """
         # Get name of command.
-        modtranExecutable = os.getenv('MODTRAN_EXECUTABLE')
-        args = shlex.split(modtranExecutable)
+        #modtranExecutable = os.getenv('MODTRAN_EXECUTABLE')
+        #args = shlex.split(modtranExecutable)
+        args =["modtran"]
         # Write name of modtran .tp5 file to run, and put into mod5root.in
         # input file.
-        mfile = open('mod5root.in', 'w')
-        print >>mfile, outfileRoot
+        mfile = open('modroot.in', 'w')
+        print >>mfile,"%s/%s"%( outfileRoot,outfileRoot)
         mfile.close()
         # Run modtran.
+        print "Run modtran."
         errcode = subprocess.check_call(args)
         if errcode != 0:
             raise Exception('Modtran run on {0} did not \
                 complete properly.'.format(outfileRoot))
+        print "fin  modtran."
         return
 
     def cleanModtran(self, outfileRoot='tmp'):
