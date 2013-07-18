@@ -34,6 +34,7 @@ import shlex
 from copy import deepcopy
 import numpy
 
+S_verbose = 2
 
 class ModtranCards(object):
     """A class to set up the MODTRAN4 or 5 .tp5 input files, and run MODTRAN. """
@@ -69,10 +70,11 @@ class ModtranCards(object):
         # string element of that list.
         return
 
-    def readParameterFormats(self, formatfile=None):
+    def readParameterFormats(self, formatfile=None):    
         """Read the format file for the parameters we can change in each run.
         This provides the names of changeable parameters, their location in the
         run .tp5 file and data format."""
+        if S_verbose > 1 : print "[readParameterFormats] start"
         # Using the same format established by Michel.
         # Set up the default file location.
         if not formatfile:
@@ -85,7 +87,7 @@ class ModtranCards(object):
         self._paramFormats = {}
         with open(formatfile, 'r') as formatf:
             for line in formatf:
-                values = line.split()
+                values = line.split('$')
                 paramName = values[0]
                 self._paramFormats[paramName] = {}
                 self._paramFormats[paramName]['outputLine'] = int(values[1])
@@ -106,10 +108,13 @@ class ModtranCards(object):
         # data format ('format', although we only use the data type currently).
         return
 
-    def readParamValues_M(self, parameterfile):
-        """Read the parameters from a file (with Michel's input format,
+    def readParamValues_M(self, parameterfile):        
+        """
+        Read the parameters from a file (with Michel's input format,
         'id $ key = value $ ... ').
-        Provided for backward compatibility & testing purposes mainly. """
+        Provided for backward compatibility & testing purposes mainly.
+        """
+        if S_verbose > 1 : print "[readParamValues_M] start"
         file = open(parameterfile, 'r')
         # Save the parameter values to a list of dictionaries, because there
         # will likely be more than one MODTRAN 'run' to be generated if running
@@ -140,9 +145,12 @@ class ModtranCards(object):
         return paramValuesList
 
     def readParamValues_F(self, parameterfile):
-        """Read the parameters from a flat file format (file headers, then
+        """
+        Read the parameters from a flat file format (file headers, then
         values in each column).
-        Provided for backward compatibility & testing purposes mainly.  """
+        Provided for backward compatibility & testing purposes mainly.
+        """
+        if S_verbose > 1 : print "[readParamValues_F] start"
         file = open(parameterfile, 'r')
         # Save the parameter values to a list of dictionaries.
         paramValuesList = []
@@ -179,16 +187,19 @@ class ModtranCards(object):
         return keys_used
 
     def _printCards(self, runCards):
-        "Pretty print the cards to the screen for debugging."""
+        """Pretty print the cards to the screen for debugging."""
         for run in runCards:
             for card in run:
                 print card.rstrip()
         return
 
     def writeModtranCards(self, paramValues, outfileRoot='tmp'):
-        """Write the modtran run card to disk.
+        """
+        Write the modtran run card to disk.
         Parameter values can be provided in a single dictionary, or as a list
-        of dictionaries (for multiple runs)."""
+        of dictionaries (for multiple runs).
+        """
+        if S_verbose > 1 : print "[writeModtranCards] start"
         # If paramValues was a single dictionary, let's just turn it into a
         # list so we can iterate
         #  over as if it was given as a list. Cheap, but easy.
@@ -216,12 +227,16 @@ class ModtranCards(object):
         for paramValuesDict in paramValues:
             # Validate the dictionary contains only parameters we can understand.
             paramkeys = self._validateParamValues(paramValuesDict)
+            #print paramkeys
             # Set up the base modtran run input values.
-            card = deepcopy(self._cardTemplate)
+            card = deepcopy(self._cardTemplate)           
             # Go through parameter key/values that we know how to use in modtran
             # file, add to input file.
+            #print "paramkeys",paramkeys
+            #print "_paramFormats",self._paramFormats
             for key in paramkeys:
                 line = self._paramFormats[key]['outputLine']
+                print key, line
                 # Insert into appropriate card.
                 card[line] = card[line][:(self._paramFormats[key]['startChar']-1)] + \
                     self._paramFormats[key]['format'] % (paramValuesDict[key]) + \
@@ -231,10 +246,13 @@ class ModtranCards(object):
             # 3 if it is.
             #card[3] = '{0}\n'.format(modtranDataDir)
             # Add continuation card value.
-            contline = '{0}{1}{2}'.format(card[continuation_cardline][:4],
-                                          continuation_cardvalue[irun],
-                                          card[continuation_cardline][5:])
-            card[continuation_cardline-1] = contline
+            #for line in card: print line
+            ## contline = '{0}{1}{2}'.format(card[continuation_cardline][:4],
+            ##                               continuation_cardvalue[irun],
+            ##                               card[continuation_cardline][5:])
+            ## card[continuation_cardline-1] = contline
+            
+            
             # Add Card2A and/or Card 2B if needed, inserting into the input file
             # at line ('rank') 6
             # And add these lines into the modtran input file at line ('rank') 6
@@ -248,10 +266,11 @@ class ModtranCards(object):
                     card = card[:line_add] + card2B + card[line_add:]
             # Add new card into entire list.
             irun += 1
+            #for line in card: print line
             allcards.append(card)
             #self._printCards(allcards)
         # Write data to output.
-        outfile = os.path.join(modtranDataDir, outfileRoot)
+        outfile = os.path.join(modtranDataDir, outfileRoot)        
         with open(os.path.join(outfile,outfileRoot) + '.tp5', 'w') as cardf:
             for run in allcards:
                 for card in run:
@@ -260,6 +279,7 @@ class ModtranCards(object):
     def runModtran(self, outfileRoot='tmp'):
         """Spawn a shell process to run MODTRAN on the input file
         in outfileRoot. """
+        if S_verbose > 1 : print "[runModtran] start"
         # Get name of command.
         #modtranExecutable = os.getenv('MODTRAN_EXECUTABLE')
         #args = shlex.split(modtranExecutable)
