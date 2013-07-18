@@ -136,7 +136,7 @@ class AuxTelSequence(object):
 
     def initTransmissionArray(self, nruns):
         """Initialize class attribute for atmospheric transmission"""
-        if not self.modtran_wl:
+        if len(self.modtran_wl) == 0:
             self.initModtranWavelengths()
 
         self.transmittance = np.zeros((nruns, len(self.modtran_wl)))
@@ -173,7 +173,15 @@ class AuxTelSequence(object):
         selected visits"""
         # Call for the MODTRAN card class
         modcard = ModtranCards()
-        modcard.setDefaults()
+        #modcard.setDefaults()
+        dataDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        if not dataDir:
+            raise Exception('If ATMOSPHERE_TRANSMISSION_DIR env not set, \
+                    must specify template filename.')
+        templatefile = os.path.join(dataDir, 'data/Cardtemplate.dat_michel')
+        modcard.readCardTemplate(templatefile)
+        formatfile = os.path.join(dataDir, 'data/FormatParameters.dat_michel')
+        modcard.readParameterFormats(formatfile)
         # Write the cards to the disk
         modcard.writeModtranCards(self.modtran_visits[run], self.outfilename)
         modcard.runModtran()
@@ -191,26 +199,31 @@ class AuxTelSequence(object):
         outputpath = os.path.join(modtranDataDir, outputfile)
         # Initialize array for transmittance
         trans = np.zeros(len(self.modtran_wl))
+        print "outputpath",outputpath
         with open(outputpath, 'r') as outf:
             # File starts with data - no header
             # I use negative indices because MODTRAN prints the wavelengths
             # in decreasing order
-            idx = -1
+            idx =len(self.modtran_wl) -1
             for line in outf:
-                if line.starstwith('$'):
-                    continue
+                lElt = line.split()
+                # starstwith not available in python 2.6.4
+                if len(lElt) == 0 : continue
+                if lElt[0][0] == '$': continue
                 values = line.strip().split()
-                trans[idx] = float(values[1])
-                idx -= 1
-                if abs(idx) > len(self.modtran_wl):
+                if idx < 0:
+                    print abs(idx) , len(self.modtran_wl)
+                    print values[0]
                     raise ValueError("Too many values to unpack from MODTRAN \
-                        outputfile.")
+                        outputfile.")                
+                trans[idx] = float(values[1])
+                idx -= 1               
         return trans
         # MODTRAN transmittance stored
 
     def getAerTransmittance(self, run):
         """Compute the atmospheric transmittance due to aerosols"""
-        if not self.modtran_wl:
+        if self.modtran_wl == []:
             self.initModtranWavelengths()
 
         # Compute Vandermonde matrix
@@ -239,6 +252,6 @@ class AuxTelSequence(object):
             transmf.write('$ FINAL ATMOSPHERE TRANSMISSION\n')
             for val in xrange(len(self.modtran_wl)):
                 data = '\t'.join('{0:f}'.format(self.transmittance[run][val])
-                                 for run in xrange(len(self.modtran_wl)))
+                                for run in xrange(len(self.visits)))
                 line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
                 transmf.write(line)
