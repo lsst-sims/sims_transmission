@@ -21,9 +21,12 @@ import numpy
 import scipy
 import os
 
-import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
-import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
-from lsst.sims.atmosphere.transmission.aerSim import getAerParameters
+# import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
+# import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
+# from lsst.sims.atmosphere.transmission.aerSim import getAerParameters
+import MJDtools
+import modtranTools
+from aerSim import getAerParameters
 
 # Maximum number of simulated days
 # Currently limited by water vapor with 7 years
@@ -55,7 +58,7 @@ class Atmosphere(object):
         self._aer_p0_spl = None
         self._aer_p1_spl = None
         self._aer_p2_spl = None
-        
+
     # def _init_mjdArray(self):
     #     """Create mjd array to serve as base for splines"""
     #     dmjd = float(self.mjde - self.mjds)
@@ -77,6 +80,8 @@ class Atmosphere(object):
         # ide = MJDtools.MJDtoindex(self._mjd_arr[-1], seas=True)
         data_scaled = data[ids:ide]
         mjd_scaled = numpy.arange(data_scaled.size) + int(self.mjds)
+        # MODTRAN SCALING
+        data_scaled *= self._modtran_ozone_scalefactor(mjd_scaled)
         # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
         # self._o3_arr = data_spl(self._mjd_arr)
         self._o3_spl = scipy.interpolate.UnivariateSpline(
@@ -115,6 +120,16 @@ class Atmosphere(object):
         res = numpy.real(random_data) + mean_data + season
         return res[ids:ide]
 
+    def _modtran_ozone_scalefactor(self, mjd_arr):
+        """Ozone scaling factor depends on MODTRAN seasonal model
+        which depends on the season.
+        Hence we can relate the ozone scaling factor straight to
+        the season
+        Finally it is normalized to 275 DU"""
+        o3_sc_factor = numpy.array([0.8292, 0.8005, 0.7299, 0.8005])
+        sc_out = o3_sc_factor[MJDtools.getSeason(mjd_arr)]
+        return sc_out / 275.
+
     def _init_h2o(self):
         """Initialize the atmospheric water vapor sequence"""
         # of data pts a day => factor scl
@@ -123,6 +138,7 @@ class Atmosphere(object):
         ide = MJDtools.MJDtoindex(self.mjde, seas=None)
         data_scaled = self._simulate_h2o(scl*ids, scl*ide)
         mjd_scaled = numpy.arange(data_scaled.size)/float(scl) + int(self.mjds)
+        data_scaled *= self._modtran_h2o_scalefactor(mjd_scaled)
         # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
         # self._h2o_arr = data_spl(self.mjd_arr)
         self._h2o_spl = scipy.interpolate.UnivariateSpline(
@@ -165,6 +181,14 @@ class Atmosphere(object):
         std_range = wvstdSpl(numpy.arange(ndays) % (2 * 365))
         res = numpy.exp(numpy.real(random_data) * std_range + season_range)
         return res[ids:ide]
+
+    def _modtran_h2o_scalefactor(self, mjd_arr):
+        """Water vapor scaling factor depends on MODTRAN seasonal model
+        which depends on the season. Hence we can relate it straight to
+        the season. Finally it is normalized to 275 DU"""
+        h2o_sc_factor = numpy.array([2.5396, 1.4164, 0.8534, 1.4164])
+        sc_out = h2o_sc_factor[MJDtools.getSeason(mjd_arr)]
+        return sc_out / 449.23
 
     def _init_aer(self):
         ids = MJDtools.MJDtoindex(self.mjds, seas=None)

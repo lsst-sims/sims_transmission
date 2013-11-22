@@ -62,7 +62,7 @@ def toMJD(year, month, day, frac=None):
             return mjd_arr + frac
         else:
             return mjd_arr
-        
+
 def getSeason(mjd, age=None, length=None):
     """Given MJD argument compute the season.
     Output :
@@ -77,9 +77,9 @@ def getSeason(mjd, age=None, length=None):
     """
     cur_year = fromMJD(mjd)[0]
     if (mjd - toMJD(cur_year,12,21)) > 0 :
-        cur_year = cur_year + 1
+        cur_year += 1
     s0 = toMJD(cur_year-1,12,21)
-    s1 = toMJD(cur_year,3,21) 
+    s1 = toMJD(cur_year,3,21)
     s2 = toMJD(cur_year,6,21)
     s3 = toMJD(cur_year,9,21)
     s4 = toMJD(cur_year,12,21)
@@ -93,7 +93,7 @@ def getSeason(mjd, age=None, length=None):
         ssn = [1, mjd-s1-1]   #   Fall (N)   Spring (S)
     else:
         ssn = [0, mjd-s0-1]   #   Winter (N) Summer (S)
-    sld  = [s1-s0, s2-s1, s3-s2, s4-s3] 
+    sld  = [s1-s0, s2-s1, s3-s2, s4-s3]
     ssn.append(sld[ssn[0]])
     if age:
         if length:
@@ -119,4 +119,4 @@ def MJDtoindex(mjd, seas=None):
     else:
         id_start = int(mjd - toMJD(started_year,1,1))
     return id_start
-    
+
