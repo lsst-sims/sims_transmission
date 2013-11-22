@@ -21,12 +21,9 @@ import numpy
 import scipy
 import os
 
-# import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
-# import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
-# from lsst.sims.atmosphere.transmission.aerSim import getAerParameters
-import MJDtools
-import modtranTools
-from aerSim import getAerParameters
+import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
+import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
+from lsst.sims.atmosphere.transmission.aerSim import getAerParameters
 
 # Maximum number of simulated days
 # Currently limited by water vapor with 7 years
@@ -185,7 +182,7 @@ class Atmosphere(object):
     def _modtran_h2o_scalefactor(self, mjd_arr):
         """Water vapor scaling factor depends on MODTRAN seasonal model
         which depends on the season. Hence we can relate it straight to
-        the season. Finally it is normalized to 275 DU"""
+        the season."""
         h2o_sc_factor = numpy.array([2.5396, 1.4164, 0.8534, 1.4164])
         sc_out = h2o_sc_factor[MJDtools.getSeason(mjd_arr)]
         return sc_out / 449.23
