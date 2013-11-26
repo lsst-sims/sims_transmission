@@ -124,7 +124,8 @@ class Atmosphere(object):
         the season
         Finally it is normalized to 275 DU"""
         o3_sc_factor = numpy.array([0.8292, 0.8005, 0.7299, 0.8005])
-        sc_out = o3_sc_factor[MJDtools.getSeason(mjd_arr)]
+        seas_idx = numpy.asarray([MJDtools.getSeason(mjd) for mjd in mjd_arr])
+        sc_out = o3_sc_factor[seas_idx]
         return sc_out / 275.
 
     def _init_h2o(self):
@@ -184,7 +185,8 @@ class Atmosphere(object):
         which depends on the season. Hence we can relate it straight to
         the season."""
         h2o_sc_factor = numpy.array([2.5396, 1.4164, 0.8534, 1.4164])
-        sc_out = h2o_sc_factor[MJDtools.getSeason(mjd_arr)]
+        seas_idx = numpy.asarray([MJDtools.getSeason(mjd) for mjd in mjd_arr])
+        sc_out = h2o_sc_factor[seas_idx]
         return sc_out / 449.23
 
     def _init_aer(self):

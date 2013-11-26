@@ -15,8 +15,8 @@ def fromMJD(mjd, numpy=None):
     Input as float
     Output in the form [year, month, day, dayfraction]"""
     date = datetime.date.fromordinal(int(mjd) + MJDorigin)
-    year, month, day = datetime.date.isoformat(date).split('-')
-    tab = [int(year), int(month), int(day), np.mod(mjd,1.)]
+    year, month, day = map(int, datetime.date.isoformat(date).split('-'))
+    tab = [year, month, day, np.mod(mjd,1.)]
     if numpy:
         tab = np.asarray(tab)
     return tab
