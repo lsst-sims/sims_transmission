@@ -28,6 +28,7 @@ def fromMJD(mjd, numpy=None):
     nptab = np.asarray(tab)
     return nptab 
 
+
 def year2MJD(fyear):
     """From fractional year to MJD
     Input as float (or float array)

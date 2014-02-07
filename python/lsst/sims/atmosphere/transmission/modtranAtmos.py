@@ -127,8 +127,6 @@ class Atmosphere(object):
         Finally it is normalized to 275 DU"""
         o3_sc_factor = numpy.array([0.8292, 0.8005, 0.7299, 0.8005])
         seas_idx = numpy.asarray([MJDtools.getSeason(mjd) for mjd in mjd_arr])
-        print mjd_arr
-        print seas_idx
         sc_out = o3_sc_factor[seas_idx]
         return sc_out / 275.
 
