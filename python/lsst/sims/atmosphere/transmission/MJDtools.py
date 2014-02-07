@@ -14,12 +14,19 @@ def fromMJD(mjd, numpy=None):
     """From MJD to Gregorian
     Input as float
     Output in the form [year, month, day, dayfraction]"""
-    date = datetime.date.fromordinal(int(mjd) + MJDorigin)
-    year, month, day = datetime.date.isoformat(date).split('-')
-    tab = [int(year), int(month), int(day), np.mod(mjd,1.)]
-    if numpy:
-        tab = np.asarray(tab)
-    return tab
+    #mjd = np.asarray(mjd)
+    #if len(mjd) == 1:
+    if type(mjd) != np.ndarray:
+        date = datetime.date.fromordinal(mjd + MJDorigin)
+        year, month, day = map(int, datetime.date.isoformat(date).split('-'))
+    else:
+        mjd_int = mjd.astype(int)
+        date_arr = [datetime.date.fromordinal(mjd + MJDorigin) for mjd in mjd_int]
+        ymd = [map(int, datetime.date.isoformat(date).split('-')) for date in date_arr]
+        year, month, day = np.asarray(ymd, dtype='int').T
+    tab = [year, month, day, np.mod(mjd,1.)]
+    nptab = np.asarray(tab)
+    return nptab 
 
 def year2MJD(fyear):
     """From fractional year to MJD
@@ -43,12 +50,16 @@ def toMJD(year, month, day, frac=None):
     """From date to MJD
     Input as year, month, day (or float arrays)
     Output as float (or float array)"""
-    if type(year)==int:
+    #print type(year), type(month), type(day)
+    if type(year)==int or type(year)==np.float64:
         date_list = [datetime.date(int(year),int(month),int(day))]
     else:
+        #print year
         year = np.asarray(year, dtype='int')
         month = np.asarray(month, dtype='int')
         day = np.asarray(day, dtype='int')
+        #print year
+        #print type(year)
         date_list = [datetime.date(y,m,d) for y,m,d in zip(year,month,day)]
     mjd_list = [d.toordinal() - MJDorigin for d in date_list]
     mjd_arr = np.asarray(mjd_list, dtype='int')
@@ -76,13 +87,14 @@ def getSeason(mjd, age=None, length=None):
     - Length : Season length
     """
     cur_year = fromMJD(mjd)[0]
-    if (mjd - toMJD(cur_year,12,21)) > 0 :
+    tab = np.ones_like(cur_year)
+    if (mjd - toMJD(cur_year,tab*12,tab*21)) > 0 :
         cur_year += 1
-    s0 = toMJD(cur_year-1,12,21)
-    s1 = toMJD(cur_year,3,21)
-    s2 = toMJD(cur_year,6,21)
-    s3 = toMJD(cur_year,9,21)
-    s4 = toMJD(cur_year,12,21)
+    s0 = toMJD(cur_year-1,tab*12,tab*21)
+    s1 = toMJD(cur_year,tab*3,tab*21)
+    s2 = toMJD(cur_year,tab*6,tab*21)
+    s3 = toMJD(cur_year,tab*9,tab*21)
+    s4 = toMJD(cur_year,tab*12,tab*21)
     if (mjd-s4)>0:
         ssn = [0, mjd-s4-1]   #   Winter (Northern hem.) Summer (South)
     elif (mjd-s3)>0:
@@ -118,5 +130,6 @@ def MJDtoindex(mjd, seas=None):
         id_start = int(mjd - toMJD(started_year,12,21))
     else:
         id_start = int(mjd - toMJD(started_year,1,1))
+    print "MJDtoindex:",mjd,  id_start    
     return id_start
 

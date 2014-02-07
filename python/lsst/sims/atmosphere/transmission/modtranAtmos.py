@@ -37,14 +37,10 @@ class Atmosphere(object):
     """Base class for retrieving a set of simulated MODTRAN
     atmosphere parameters between two dates in mjd.
     """
-    def __init__(self, mjds, mjde, npoints, seed=_default_seed):
+    def __init__(self,  npoints, seed=_default_seed):
+        
         """Initialize Atmosphere class"""
-        # Starting/ending date
-        self.mjds = int(mjds) - 5
-        self.mjde = int(mjde) + 5
-        # Test for length
-        if (self.mjde-self.mjds) > _max_sim_days:
-            raise ValueError("Period probed too long for the whole simulation")
+        # Starting/ending date        
         # Seed for the randoms
         self.seed = seed
         # Ozone spline
@@ -55,6 +51,7 @@ class Atmosphere(object):
         self._aer_p0_spl = None
         self._aer_p1_spl = None
         self._aer_p2_spl = None
+        self.started_year = 0 
 
     # def _init_mjdArray(self):
     #     """Create mjd array to serve as base for splines"""
@@ -70,21 +67,26 @@ class Atmosphere(object):
     def _init_o3(self):
         """Initialize the atmospheric ozone sequence"""
         # self._o3_arr = numpy.zeros_like(self._mjd_arr)
-        ids = MJDtools.MJDtoindex(self.mjds, seas=True)
-        ide = MJDtools.MJDtoindex(self.mjde, seas=True)
-        data = self._simulate_o3(ids, ide)
+        #ids = self.MJDtoindex(self.mjds, seas=True)
+        #ide = self.MJDtoindex(self.mjde, seas=True)
+        #print "index min max", ids, ide
+        data = self._simulate_o3()
         # ids = MJDtools.MJDtoindex(self._mjd_arr[0], seas=True)
         # ide = MJDtools.MJDtoindex(self._mjd_arr[-1], seas=True)
-        data_scaled = data[ids:ide]
-        mjd_scaled = numpy.arange(data_scaled.size) + int(self.mjds)
+        #data_scaled = data[ids:ide]
+        print data
+        print data.size
+        mjd_scaled = numpy.arange(data.size)
         # MODTRAN SCALING
-        data_scaled *= self._modtran_ozone_scalefactor(mjd_scaled)
+        data *= self._modtran_ozone_scalefactor(mjd_scaled)
         # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
         # self._o3_arr = data_spl(self._mjd_arr)
         self._o3_spl = scipy.interpolate.UnivariateSpline(
-            mjd_scaled, data_scaled)
+            mjd_scaled, data)
 
-    def _simulate_o3(self, ids, ide):
+        
+
+    def _simulate_o3(self):
         """From satellite datasets, retrieve the main temporal variability of
         ozone and simulate 8 years of daily data"""
         # transDir = '/Users/alexandreboucaud/work/LSST/calib/LSST_svn/\
@@ -115,7 +117,7 @@ class Atmosphere(object):
         random_data = numpy.fft.ifft(Famp * Fphase)
         season = o3seasSpl(numpy.arange(ndays) % 365)
         res = numpy.real(random_data) + mean_data + season
-        return res[ids:ide]
+        return res
 
     def _modtran_ozone_scalefactor(self, mjd_arr):
         """Ozone scaling factor depends on MODTRAN seasonal model
@@ -124,24 +126,28 @@ class Atmosphere(object):
         the season
         Finally it is normalized to 275 DU"""
         o3_sc_factor = numpy.array([0.8292, 0.8005, 0.7299, 0.8005])
-        sc_out = o3_sc_factor[MJDtools.getSeason(mjd_arr)]
+        seas_idx = numpy.asarray([MJDtools.getSeason(mjd) for mjd in mjd_arr])
+        print mjd_arr
+        print seas_idx
+        sc_out = o3_sc_factor[seas_idx]
         return sc_out / 275.
 
     def _init_h2o(self):
         """Initialize the atmospheric water vapor sequence"""
         # of data pts a day => factor scl
         scl = 2
-        ids = MJDtools.MJDtoindex(self.mjds, seas=None)
-        ide = MJDtools.MJDtoindex(self.mjde, seas=None)
-        data_scaled = self._simulate_h2o(scl*ids, scl*ide)
-        mjd_scaled = numpy.arange(data_scaled.size)/float(scl) + int(self.mjds)
+        #ids = self.MJDtoindex(self.mjds, seas=None)
+        #ide = self.MJDtoindex(self.mjde, seas=None)
+        #data_scaled = self._simulate_h2o(scl*ids, scl*ide)
+        data_scaled = self._simulate_h2o()
+        mjd_scaled = numpy.arange(data_scaled.size)/float(scl)
         data_scaled *= self._modtran_h2o_scalefactor(mjd_scaled)
         # data_spl = scipy.interpolate.UnivariateSpline(mjd_scaled, data_scaled)
         # self._h2o_arr = data_spl(self.mjd_arr)
         self._h2o_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_scaled)
 
-    def _simulate_h2o(self, ids, ide):
+    def _simulate_h2o(self):
         """From satellite datasets, retrieve the main temporal variability of
         water vapor and simulate 7 years of data with 2 data points per day """
         # The computation is made in log
@@ -177,22 +183,24 @@ class Atmosphere(object):
         season_range = wvseasSpl(numpy.arange(ndays) % (2 * 365))
         std_range = wvstdSpl(numpy.arange(ndays) % (2 * 365))
         res = numpy.exp(numpy.real(random_data) * std_range + season_range)
-        return res[ids:ide]
+        return res
 
     def _modtran_h2o_scalefactor(self, mjd_arr):
         """Water vapor scaling factor depends on MODTRAN seasonal model
         which depends on the season. Hence we can relate it straight to
         the season."""
         h2o_sc_factor = numpy.array([2.5396, 1.4164, 0.8534, 1.4164])
-        sc_out = h2o_sc_factor[MJDtools.getSeason(mjd_arr)]
+        seas_idx = numpy.asarray([MJDtools.getSeason(mjd) for mjd in mjd_arr])
+        sc_out = h2o_sc_factor[seas_idx]
         return sc_out / 449.23
 
     def _init_aer(self):
-        ids = MJDtools.MJDtoindex(self.mjds, seas=None)
-        ide = MJDtools.MJDtoindex(self.mjde, seas=None)
-        data = self._simulate_aer(ids, ide)
+        """
+        for each polynomial coefficient fit with spline ie spline scipy object
+        """
+        data = self._simulate_aer()
         data_p0, data_p1, data_p2, stdev = data.T
-        mjd_scaled = numpy.arange(data_p0.size) + int(self.mjds)
+        mjd_scaled = numpy.arange(data_p0.size)
         self._aer_p0_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_p0)
         self._aer_p1_spl = scipy.interpolate.UnivariateSpline(
@@ -200,13 +208,13 @@ class Atmosphere(object):
         self._aer_p2_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_p2)
 
-    def _simulate_aer(self, ids, ide):
+    def _simulate_aer(self):
         """Simulate the aerosol optical depth as a function of wavelength
         and return 2nd degree polynomial fitting parameters
         (cf. aerSim.py for more info)"""
         data = getAerParameters(self.seed, airmass='0')
         arrdata = numpy.array(data)
-        return arrdata[ids:ide]
+        return arrdata
 
     def init_main_parameters(self, nvulc=0):
         """Initialize the main atmospheric parameters"""
@@ -220,6 +228,8 @@ class Atmosphere(object):
     def ozone(self, mjd):
         """Return atmosperic ozone for a given mjd"""
         # return self._o3_arr[idx]
+        print mjd
+        print "ici ",self._o3_spl(mjd)
         return self._o3_spl(mjd)
 
     def wvapor(self, mjd):

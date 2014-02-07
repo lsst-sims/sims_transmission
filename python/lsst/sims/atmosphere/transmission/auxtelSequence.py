@@ -47,9 +47,15 @@ live or saved into a file.
 
 import numpy as np
 import os
+import copy
+
 from lsst.sims.atmosphere.transmission.modtranAtmos import Atmosphere
 from lsst.sims.atmosphere.transmission.modtranCardsNoAer import ModtranCards
 import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
+import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
+
+
+S_Verbose = 1
 
 RAD2DEC = 180. / np.pi
 DEG2RAD = np.pi / 180.
@@ -80,6 +86,7 @@ class AuxTelSequence(object):
         self.modtran_wl = []
         # Transmittance array
         self.transmittance = []
+        
 
     def changeList(self, newlist):
         """Input a new sequence list."""
@@ -91,8 +98,10 @@ class AuxTelSequence(object):
         self.npoints = len(self.visits)
         # Starting date
         self.mjds = self.visits[0]['MJD']
-        # Ending date
-        self.mjde = self.visits[-1]['MJD']
+        started_year =  MJDtools.fromMJD(self.mjds)[0]        
+        if (self.mjds - MJDtools.toMJD(started_year,12, 21)) < 0 :
+            started_year -= 1
+        self.offsetMJD = MJDtools.toMJD(started_year, 12, 21)
 
     def generateParameters(self, seed=_default_seed):
         """Generate the atmospheric parameters over time.
@@ -101,8 +110,7 @@ class AuxTelSequence(object):
         """
         self.initPointingSequence()
         # Instantiate the Atmosphere class
-        self.atmos = Atmosphere(
-            self.mjds, self.mjde, self.npoints, seed)
+        self.atmos = Atmosphere( self.npoints, seed)
         # Generate main atmosphere parameters sequence
         self.atmos.init_main_parameters()
         # Associate a value of these parameters for each pointing
@@ -112,9 +120,13 @@ class AuxTelSequence(object):
             mjd = visit_dict['MJD']
             z_angle = visit_dict['ZANG']
             # Get atmosphere parameters
-            modtran_dict = self.fillModtranDictionary(mjd, vis_id, z_angle)
+            modtran_dict = self.fillModtranDictionary(mjd-self.offsetMJD, vis_id, z_angle)
             self.modtran_visits.append(modtran_dict)
-            self.aerosol_visits.append(self.atmos.aerosols(mjd) + (z_angle,))
+            aerosolOnly = self.atmos.aerosols(mjd%(2%365))
+            self.aerosol_visits.append(aerosolOnly + (z_angle,))
+            if S_Verbose==1:
+                print "generateParameters mjd",mjd
+                print aerosolOnly, z_angle, self.aerosol_visits[-1]
         # Init transmission array
         self.initTransmissionArray(len(self.modtran_visits))
         print 'generateParameters FIN'
@@ -148,10 +160,12 @@ class AuxTelSequence(object):
         modtranwfile = os.path.join(main_dir, 'data/modtranwl.txt')
         self.modtran_wl = np.loadtxt(modtranwfile)
 
-    def getAtmTrans(self, outfile='tmp', save=True):
+    def getAtmTrans(self, outfile='tmp', modversion=4, save=True):
         """Go through the process of getting an atmospheric transmission"""
         # Set the name of MODTRAN output file
         self.outfilename = outfile
+        # Init the modtran card class
+        self.base_modcard = self.initModtran(modversion)
         # Loop over the MODTRAN runs
         for run in xrange(len(self.visits)):
             self.runModtran(run)
@@ -159,29 +173,44 @@ class AuxTelSequence(object):
             modtrans = self.getModtranExtinction()
             # Compute aerosols transmission
             aertrans = self.getAerTransmittance(run)
+            print "getAerTransmittance(%d) mean %f, std %f"%(run, aertrans.mean(), aertrans.std()) 
             # Retrieve gray extinction
             t_gray = self.visits[run]['TGRAY']
             # Multiply both to get full transmission
             self.transmittance[run] = t_gray * modtrans * aertrans
-
+            print t_gray,  modtrans, aertrans
         if save:
             self.saveTrans()
         # Data saved into a file named '%s_final.plt' % self.outfilename
 
+    def initModtran(self, modversion):
+        """Call the modtranCards class in order to run MODTRAN for
+        selected visits"""
+        #modcard.setDefaults()
+        atmTransDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
+        if not atmTransDir:
+            raise Exception('If ATMOSPHERE_TRANSMISSION_DIR env not set, \
+                    must specify template filename.')
+        if modversion == 4:
+            templatefile = os.path.join(atmTransDir, 'data/Cardtemplate.dat_michel')
+            formatfile = os.path.join(atmTransDir, 'data/FormatParameters.dat_michel')
+        elif modversion == 5:
+            templatefile = os.path.join(atmTransDir, 'data/Cardtemplate.dat')
+            formatfile = os.path.join(atmTransDir, 'data/FormatParameters.dat')
+        else:
+            raise ValueError('MODTRAN version not supported')
+        # Call for the MODTRAN card class
+        modcard = ModtranCards()
+        modcard.readCardTemplate(templatefile)
+        modcard.readParameterFormats(formatfile)
+
+        return modcard
+
     def runModtran(self, run):
         """Call the modtranCards class in order to run MODTRAN for
         selected visits"""
-        # Call for the MODTRAN card class
-        modcard = ModtranCards()
-        #modcard.setDefaults()
-        dataDir = os.getenv('ATMOSPHERE_TRANSMISSION_DIR')
-        if not dataDir:
-            raise Exception('If ATMOSPHERE_TRANSMISSION_DIR env not set, \
-                    must specify template filename.')
-        templatefile = os.path.join(dataDir, 'data/Cardtemplate.dat_michel')
-        modcard.readCardTemplate(templatefile)
-        formatfile = os.path.join(dataDir, 'data/FormatParameters.dat_michel')
-        modcard.readParameterFormats(formatfile)
+        # Create a copy of the base modtran card
+        modcard = copy.deepcopy(self.base_modcard)
         # Write the cards to the disk
         modcard.writeModtranCards(self.modtran_visits[run], self.outfilename)
         modcard.runModtran()
@@ -195,11 +224,11 @@ class AuxTelSequence(object):
 
         modtranDataDir = os.getenv('MODTRAN_DATADIR')
         # MODTRAN transmission outputfile
-        outputfile = '{0}/{1}.plt'.format(self.outfilename, self.outfilename)
+        outputfile = '{0}/{0}.plt'.format(self.outfilename)
         outputpath = os.path.join(modtranDataDir, outputfile)
         # Initialize array for transmittance
         trans = np.zeros(len(self.modtran_wl))
-        print "outputpath",outputpath
+        # print "outputpath",outputpath
         with open(outputpath, 'r') as outf:
             # File starts with data - no header
             # I use negative indices because MODTRAN prints the wavelengths
@@ -215,9 +244,9 @@ class AuxTelSequence(object):
                     print abs(idx) , len(self.modtran_wl)
                     print values[0]
                     raise ValueError("Too many values to unpack from MODTRAN \
-                        outputfile.")                
+                        outputfile.")
                 trans[idx] = float(values[1])
-                idx -= 1               
+                idx -= 1
         return trans
         # MODTRAN transmittance stored
 
@@ -225,18 +254,26 @@ class AuxTelSequence(object):
         """Compute the atmospheric transmittance due to aerosols"""
         if self.modtran_wl == []:
             self.initModtranWavelengths()
-
         # Compute Vandermonde matrix
         # degree is hardcoded but only 2nd degree polynomial is used
-        vdm_wl = np.vander(self.modtran_wl, 3)
+        wlFit = self.modtran_wl
+        if S_Verbose >=1: print "wlFit: ",wlFit
+        #vdm_wl = np.vander(wlFit, 3)
         # Get polynomial roots as well as zenith angle
         p0, p1, p2, z_ang = self.aerosol_visits[run]
+        if S_Verbose >=1: print "aerosol_visits[%d]:%s"%(run, str(self.aerosol_visits[run]))
         pfit = np.array([p0, p1, p2])
         # Reconstitute polynom
-        polynom = np.dot(vdm_wl, pfit)
+        defPoly = np.poly1d(pfit)
+        #polynom = np.dot(vdm_wl, pfit)
+        polynom = np.exp(defPoly(np.log(wlFit)))       
+        if S_Verbose >=1: print "polynom: ",polynom
         # Retrieve airmass from zenith angle
         airmass = modtranTools.zenith2airmass(z_ang, site='lsst', unit='rad')
-        return np.exp(-1.0 * airmass * polynom)
+        if S_Verbose >=1: print "airmass: ",airmass
+        aero =  np.exp(-1.0 * airmass * polynom)
+        np.save("aero%d"%run,aero )        
+        return aero 
 
     def saveTrans(self):
         """Save full extinction into an ascii file
@@ -244,9 +281,9 @@ class AuxTelSequence(object):
         The structure is:
             wavelength transm[run1] transm[run2] transm[run3] etc.
         """
+        if S_Verbose: print "array transmittance:",self.transmittance
         modtranDataDir = os.getenv('MODTRAN_DATADIR')
-        outputfile = '{0}/{1}_final.plt'.format(
-            self.outfilename, self.outfilename)
+        outputfile = '{0}/{0}_final.plt'.format(self.outfilename)
         outputpath = os.path.join(modtranDataDir, outputfile)
         with open(outputpath, 'w') as transmf:
             transmf.write('$ FINAL ATMOSPHERE TRANSMISSION\n')
@@ -255,3 +292,5 @@ class AuxTelSequence(object):
                                 for run in xrange(len(self.visits)))
                 line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
                 transmf.write(line)
+        print "{0} MODTRAN computed spectra written in {1}".format(
+            len(self.visits), outputpath)

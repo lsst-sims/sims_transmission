@@ -213,6 +213,7 @@ class AtmoComp:
             self.interpolateSecz(secz)
 
         BP0 = 782 # mb
+        print __file__+"@buildAtmos: define pressure"
         # set aerosol appropriately with these coefficients
         self.atmo_abs['aerosol'] = 1.0 - numpy.exp(-secz * (self.C['t0'] + self.C['t1']*0.0 + self.C['t2']*0.0) 
                                                    * (self.wavelen/675.0)**self.C['alpha'])

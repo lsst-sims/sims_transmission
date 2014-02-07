@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 import os
 import numpy as np
-# import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import numpy.fft as npf
 import numpy.random as npr
 import numpy.linalg as npl
@@ -40,6 +40,11 @@ NU_MIN = 9040.
 NU_MAX = 35100
 NU_STEP = (NU_MAX - NU_MIN) / NI
 
+
+
+S_DoPlot = 1
+S_Verbose= 0
+
 ##########
 # METHODS
 ##########
@@ -66,6 +71,7 @@ def movingAverage(interval, window_size):
     interval = np.concatenate([interval[-edge:], interval, interval[:edge]])
     window = np.ones(int(window_size)) / float(window_size)
     return np.convolve(interval, window, 'same')[edge:-edge]
+
 
 
 # DICTIONARY CONSTRUCTION
@@ -312,9 +318,11 @@ def main(seed=10):
 
 def getAerParameters(seed=10, airmass='0'):
     """Return a vector containing the daily fitting parameters for aerosols
-    at Cerro Pachon for 13 years
-
+    at Cerro Pachon for 13 years: 
+    array like:
+       [pfit[0], pfit[1], pfit[2], stdev]
     bonus: write a temporary file containing the data"""
+    print "=====> getAerParameters"
     if type(airmass) == int:
         airmass = str(airmass)
     # Get simulated parameters in a dictionary
@@ -324,6 +332,7 @@ def getAerParameters(seed=10, airmass='0'):
     for iwl, wl in enumerate(aerstr):
         outvect[:, iwl] = outdict[wl][airmass]
     # Construct the Vandermonde matrix for standard deviation on the datapoints
+    print "laer_wl:", laer_wl
     vx = np.vander(laer_wl, P_DEG + 1)
     # Create temporary file to store the results
     tmpfile = open('tempfile.dat', 'w')
@@ -333,18 +342,32 @@ def getAerParameters(seed=10, airmass='0'):
     # initialize vector for fitting parameters
     fitvect = np.zeros((N_DAYS - 1, 4))
     for day in xrange(N_DAYS - 1):
+        #print "======================================"
+        #print day
         lvect = outvect[day]
         # Fit
         pfit = np.polyfit(laer_wl, lvect, P_DEG)
         # Standard deviation
         stdev = np.std(lvect - np.dot(vx, pfit))
+        if S_Verbose > 1:
+            print "fit ", lvect," at ",laer_wl
+            print day, stdev
         # Store in vector
         fitvect[day] = np.array([pfit[0], pfit[1], pfit[2], stdev])
+        #print "coef: ", fitvect[day]
         # Write in file
-        strline = '{0:d}\t{1:s}\t{2:.6f}\t{3:.6f}\t{4:.6f}\t{0:.6f}\n'.format(
-            day, airmass, pfit[0], pfit[1], pfit[2], stdev)
+        strline = '{0:d}\t{1:s}\t{2:.6f}\t{3:.6f}\t{4:.6f}\t{5:.6f}\n'.format(
+            day, airmass, pfit[0], pfit[1], pfit[2], stdev)        
         tmpfile.write(strline)
     tmpfile.close()
+    if S_DoPlot > 0:
+        plt.figure()
+        plt.title('last aerosol fit')
+        plt.plot(laer_wl, lvect,'*')
+        defPoly = np.poly1d(pfit)
+        wl = np.linspace(laer_wl[0], laer_wl[-1], 1000)
+        plt.plot(wl, defPoly(wl))
+        plt.show()
     return fitvect
 
 
