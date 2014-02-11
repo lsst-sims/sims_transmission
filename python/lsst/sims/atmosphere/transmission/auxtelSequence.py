@@ -233,7 +233,7 @@ class AuxTelSequence(object):
             # File starts with data - no header
             # I use negative indices because MODTRAN prints the wavelengths
             # in decreasing order
-            idx =len(self.modtran_wl) -1
+            idx = len(self.modtran_wl) -1
             for line in outf:
                 lElt = line.split()
                 # starstwith not available in python 2.6.4

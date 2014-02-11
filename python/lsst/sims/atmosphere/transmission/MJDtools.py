@@ -17,7 +17,8 @@ def fromMJD(mjd, numpy=None):
     #mjd = np.asarray(mjd)
     #if len(mjd) == 1:
     if type(mjd) != np.ndarray:
-        date = datetime.date.fromordinal(mjd + MJDorigin)
+        print mjd + MJDorigin
+        date = datetime.date.fromordinal(int(mjd + MJDorigin))
         year, month, day = map(int, datetime.date.isoformat(date).split('-'))
     else:
         mjd_int = mjd.astype(int)

@@ -39,11 +39,8 @@ NI = 500
 NU_MIN = 9040.
 NU_MAX = 35100
 NU_STEP = (NU_MAX - NU_MIN) / NI
-
-
-
 S_DoPlot = 1
-S_Verbose= 0
+S_Verbose = 0
 
 ##########
 # METHODS
