@@ -23,7 +23,8 @@ import os
 
 import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
 import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
-from lsst.sims.atmosphere.transmission.aerSim import getAerParameters
+import lsst.sims.atmosphere.transmission.aerSim as asl
+
 
 # Maximum number of simulated days
 # Currently limited by water vapor with 7 years
@@ -37,7 +38,7 @@ class Atmosphere(object):
     """Base class for retrieving a set of simulated MODTRAN
     atmosphere parameters between two dates in mjd.
     """
-    def __init__(self,  npoints, seed=_default_seed):
+    def __init__(self, seed=_default_seed):
         
         """Initialize Atmosphere class"""
         # Starting/ending date        
@@ -74,8 +75,6 @@ class Atmosphere(object):
         # ids = MJDtools.MJDtoindex(self._mjd_arr[0], seas=True)
         # ide = MJDtools.MJDtoindex(self._mjd_arr[-1], seas=True)
         #data_scaled = data[ids:ide]
-        print data
-        print data.size
         mjd_scaled = numpy.arange(data.size)
         # MODTRAN SCALING
         data *= self._modtran_ozone_scalefactor(mjd_scaled)
@@ -197,20 +196,29 @@ class Atmosphere(object):
         for each polynomial coefficient fit with spline ie spline scipy object
         """
         data = self._simulate_aer()
+        print data.shape
+        print data[99:102]
         data_p0, data_p1, data_p2, stdev = data.T
         mjd_scaled = numpy.arange(data_p0.size)
+        print "_init_aer:  Start ", data_p0.size
+        print mjd_scaled
+        
         self._aer_p0_spl = scipy.interpolate.UnivariateSpline(
-            mjd_scaled, data_p0)
+            mjd_scaled, data_p0, s=0)
         self._aer_p1_spl = scipy.interpolate.UnivariateSpline(
-            mjd_scaled, data_p1)
+            mjd_scaled, data_p1, s=0)
         self._aer_p2_spl = scipy.interpolate.UnivariateSpline(
-            mjd_scaled, data_p2)
-
+            mjd_scaled, data_p2, s=0)
+        print "_init_aer:  End"
+        
+        
     def _simulate_aer(self):
         """Simulate the aerosol optical depth as a function of wavelength
         and return 2nd degree polynomial fitting parameters
         (cf. aerSim.py for more info)"""
-        data = getAerParameters(self.seed, airmass='0')
+        print "_simulate_aer: start"
+        data = asl.getAerParameters(self.seed, airmass='0')
+        print "_simulate_aer: end"
         arrdata = numpy.array(data)
         return arrdata
 
@@ -226,8 +234,6 @@ class Atmosphere(object):
     def ozone(self, mjd):
         """Return atmosperic ozone for a given mjd"""
         # return self._o3_arr[idx]
-        print mjd
-        print "ici ",self._o3_spl(mjd)
         return self._o3_spl(mjd)
 
     def wvapor(self, mjd):
@@ -237,9 +243,10 @@ class Atmosphere(object):
 
     def aerosols(self, mjd):
         """Return atmospheric aerosols parameters for a given mjd"""
-        return (self._aer_p0_spl(mjd),
+        ret = numpy.array([self._aer_p0_spl(mjd),
                 self._aer_p1_spl(mjd),
-                self._aer_p2_spl(mjd))
+                self._aer_p2_spl(mjd)])
+        return ret.ravel()
 
     def model(self, mjd):
         """Seasonal model"""
@@ -316,5 +323,6 @@ class Atmosphere(object):
 
 
 if __name__ == "__main__":
-    atm = Atmosphere(5538, 5539.5)
+    print "by main "
+    atm = Atmosphere(12)
     atm.init_main_parameters(nvulc=0)

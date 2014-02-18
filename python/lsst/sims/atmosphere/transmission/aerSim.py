@@ -8,6 +8,11 @@ import numpy.random as npr
 import numpy.linalg as npl
 from scipy.interpolate import InterpolatedUnivariateSpline  # , splev, splrep
 
+
+S_PlotLevel = 1
+S_Verbose = 1
+
+
 # LOCAL
 #------
 # mainpath = '/Users/alexandreboucaud/work/LSST/calib/aerosols/'
@@ -39,8 +44,6 @@ NI = 500
 NU_MIN = 9040.
 NU_MAX = 35100
 NU_STEP = (NU_MAX - NU_MIN) / NI
-S_DoPlot = 1
-S_Verbose = 0
 
 ##########
 # METHODS
@@ -273,12 +276,13 @@ def randomize(eigenvals, eigenvect, seed=10):
     FYI: D = P-1 A P
     """
     evlen = eigenvals.shape
-    npr.seed(seed)
+    #print "randomize ", seed
+    #npr.seed(seed)
     s = npr.randint(0, 10000, evlen)
     randvalues = np.zeros(evlen)
     #randvector = np.zeros(eigenvals.shape, dtype='complex')
     for ival, val in enumerate(eigenvals):
-        npr.seed(s[ival])
+        #npr.seed(s[ival])
         randvalues[ival] = npr.normal(0, np.sqrt(np.abs(val)))
         # npr.seed(s)
         # phi = npr.uniform(0, 2 * np.pi)
@@ -303,6 +307,7 @@ def main(seed=10):
     # print 'Covariance Matrix:\n', covariance_matrix
     # print 'Eigenvalues:\n', eigenvalues
     # print 'Eigenvectors:\n', eigenvectors
+    print "main ", seed
     npr.seed(seed)
     sprseed = npr.randint(0, 100000, nfreq)
     for freq in xrange(nfreq):
@@ -314,15 +319,18 @@ def main(seed=10):
 
 
 def getAerParameters(seed=10, airmass='0'):
-    """Return a vector containing the daily fitting parameters for aerosols
+    """
+    Return a vector containing the daily polynome fitting parameters for aerosols
     at Cerro Pachon for 13 years: 
     array like:
        [pfit[0], pfit[1], pfit[2], stdev]
-    bonus: write a temporary file containing the data"""
+    bonus: write a temporary file containing the data
+    """
     print "=====> getAerParameters"
     if type(airmass) == int:
         airmass = str(airmass)
     # Get simulated parameters in a dictionary
+    print "getAerParameters ",seed
     outdict = main(seed)
     # Cast them into a vector
     outvect = np.zeros((N_DAYS - 1, len(aerstr)))
@@ -339,8 +347,7 @@ def getAerParameters(seed=10, airmass='0'):
     # initialize vector for fitting parameters
     fitvect = np.zeros((N_DAYS - 1, 4))
     for day in xrange(N_DAYS - 1):
-        #print "======================================"
-        #print day
+        #print "======================================"        
         lvect = outvect[day]
         # Fit
         pfit = np.polyfit(laer_wl, lvect, P_DEG)
@@ -354,19 +361,51 @@ def getAerParameters(seed=10, airmass='0'):
         #print "coef: ", fitvect[day]
         # Write in file
         strline = '{0:d}\t{1:s}\t{2:.6f}\t{3:.6f}\t{4:.6f}\t{5:.6f}\n'.format(
-            day, airmass, pfit[0], pfit[1], pfit[2], stdev)        
+            day, airmass, pfit[0], pfit[1], pfit[2], stdev)
+        if day == 100:
+            print strline       
         tmpfile.write(strline)
     tmpfile.close()
-    if S_DoPlot > 0:
+    if S_PlotLevel > 0:
         plt.figure()
-        plt.title('last aerosol fit')
+        plt.title('last aerosol fit day %d'%day)
         plt.plot(laer_wl, lvect,'*')
         defPoly = np.poly1d(pfit)
         wl = np.linspace(laer_wl[0], laer_wl[-1], 1000)
         plt.plot(wl, defPoly(wl))
-        plt.show()
+        #
+        wl = np.linspace(300, 1000, 512)
+        lday = [100,101, 200, 300, 400]
+        lTrans = [getAerTransmittance(wl, fitvect[_d][:-1], 1.0) for _d in lday]
+        plt.figure()
+        plt.title("aerosol transmission")
+        [plt.plot(wl, tr) for tr in lTrans]
+        strDay = ["day "+str(_d) for _d in lday]
+        plt.grid()
+        plt.xlabel("nm")
+        plt.legend(strDay, loc="best")
     return fitvect
 
+
+def getAerTransmittance(pWl, pCoefPoly, pAirMass, pTitle=""):
+    """
+    return aerosol transmittance for frequency array (pWl) and given 
+    airmass (pAirMass) and polynoimial coefficient (pCoefPoly)
+    pWl      : []
+    pCoefPoly: degree 2 numpy array [p0, p1, p2]
+    pAirMass : scalar   
+    """
+    defPoly = np.poly1d(pCoefPoly)
+    polynom = np.exp(defPoly(np.log(pWl)))       
+    if S_Verbose >=2: print "polynom: ",polynom
+    aero = np.exp(-1.0 * pAirMass * polynom)
+    if S_PlotLevel>2:
+        plt.figure()
+        plt.title("getAerTransmittance() airmass%.2f\ncoef poly. %s"%(pAirMass, str(pCoefPoly)))
+        plt.plot(pWl, aero)
+        plt.grid()        
+    return aero  
+    
 
 # PLOTTING
 #---------
@@ -539,6 +578,9 @@ for wl in aerstr:
     dailydict[wl] = {}
     for iam in amstr:
         dailydict[wl][iam] = get_dict(wl, iam)
+        print wl, iam
+
+print "aerSim.py: ", dailydict
 # dictlist = ['laer_days', 'laer_yspl', 'laer_final']
 
 ###########

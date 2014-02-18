@@ -103,6 +103,7 @@ class AuxTelSequence(object):
             started_year -= 1
         self.offsetMJD = MJDtools.toMJD(started_year, 12, 21)
 
+
     def generateParameters(self, seed=_default_seed):
         """Generate the atmospheric parameters over time.
         Returns a list of dictionaries containing the modtran
@@ -110,7 +111,7 @@ class AuxTelSequence(object):
         """
         self.initPointingSequence()
         # Instantiate the Atmosphere class
-        self.atmos = Atmosphere( self.npoints, seed)
+        self.atmos = Atmosphere(seed)
         # Generate main atmosphere parameters sequence
         self.atmos.init_main_parameters()
         # Associate a value of these parameters for each pointing
