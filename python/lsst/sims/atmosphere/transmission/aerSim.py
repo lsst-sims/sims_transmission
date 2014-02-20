@@ -387,7 +387,7 @@ def getAerParameters(seed=10, airmass='0'):
     return fitvect
 
 
-def getAerTransmittance(pWl, pCoefPoly, pAirMass, pTitle=""):
+def getAerTransmittance(pWl, pCoefPoly, pAirMass):
     """
     return aerosol transmittance for frequency array (pWl) and given 
     airmass (pAirMass) and polynoimial coefficient (pCoefPoly)

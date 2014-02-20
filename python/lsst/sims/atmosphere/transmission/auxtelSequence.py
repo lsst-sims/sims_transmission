@@ -53,7 +53,7 @@ from lsst.sims.atmosphere.transmission.modtranAtmos import Atmosphere
 from lsst.sims.atmosphere.transmission.modtranCardsNoAer import ModtranCards
 import lsst.sims.atmosphere.transmission.modtranTools as modtranTools
 import lsst.sims.atmosphere.transmission.MJDtools as MJDtools
-
+import lsst.sims.atmosphere.transmission.aerSim as asl
 
 S_Verbose = 1
 
@@ -86,7 +86,8 @@ class AuxTelSequence(object):
         self.modtran_wl = []
         # Transmittance array
         self.transmittance = []
-        
+        # aero transmittance
+        self.lAeroTrans = []
 
     def changeList(self, newlist):
         """Input a new sequence list."""
@@ -123,7 +124,9 @@ class AuxTelSequence(object):
             # Get atmosphere parameters
             modtran_dict = self.fillModtranDictionary(mjd-self.offsetMJD, vis_id, z_angle)
             self.modtran_visits.append(modtran_dict)
-            aerosolOnly = self.atmos.aerosols(mjd%(2%365))
+            # used modulo to do interpolation  no extrapolation !
+            # may be not coherent with aerosol saison ? (JMC)    
+            aerosolOnly = self.atmos.aerosols(mjd % asl.N_DAYS)
             self.aerosol_visits.append(aerosolOnly + (z_angle,))
             if S_Verbose==1:
                 print "generateParameters mjd",mjd
@@ -174,6 +177,7 @@ class AuxTelSequence(object):
             modtrans = self.getModtranExtinction()
             # Compute aerosols transmission
             aertrans = self.getAerTransmittance(run)
+            self.lAeroTrans.append(aertrans)
             print "getAerTransmittance(%d) mean %f, std %f"%(run, aertrans.mean(), aertrans.std()) 
             # Retrieve gray extinction
             t_gray = self.visits[run]['TGRAY']
@@ -251,8 +255,13 @@ class AuxTelSequence(object):
         return trans
         # MODTRAN transmittance stored
 
+
+
     def getAerTransmittance(self, run):
-        """Compute the atmospheric transmittance due to aerosols"""
+        """
+        Compute the atmospheric transmittance due to aerosols
+        call aerSim module to compute transmittance
+        """
         if self.modtran_wl == []:
             self.initModtranWavelengths()
         # Compute Vandermonde matrix
@@ -264,17 +273,13 @@ class AuxTelSequence(object):
         p0, p1, p2, z_ang = self.aerosol_visits[run]
         if S_Verbose >=1: print "aerosol_visits[%d]:%s"%(run, str(self.aerosol_visits[run]))
         pfit = np.array([p0, p1, p2])
-        # Reconstitute polynom
-        defPoly = np.poly1d(pfit)
-        #polynom = np.dot(vdm_wl, pfit)
-        polynom = np.exp(defPoly(np.log(wlFit)))       
-        if S_Verbose >=1: print "polynom: ",polynom
         # Retrieve airmass from zenith angle
         airmass = modtranTools.zenith2airmass(z_ang, site='lsst', unit='rad')
         if S_Verbose >=1: print "airmass: ",airmass
-        aero =  np.exp(-1.0 * airmass * polynom)
-        np.save("aero%d"%run,aero )        
+        aero = asl.getAerTransmittance(wlFit, pfit, airmass)
+        #np.save("aero%d"%run, aero )        
         return aero 
+
 
     def saveTrans(self):
         """Save full extinction into an ascii file
@@ -285,11 +290,19 @@ class AuxTelSequence(object):
         if S_Verbose: print "array transmittance:",self.transmittance
         modtranDataDir = os.getenv('MODTRAN_DATADIR')
         outputfile = '{0}/{0}_final.plt'.format(self.outfilename)
+        outputfileAero = '{0}/{0}_aero.plt'.format(self.outfilename)
         outputpath = os.path.join(modtranDataDir, outputfile)
         with open(outputpath, 'w') as transmf:
-            transmf.write('$ FINAL ATMOSPHERE TRANSMISSION\n')
+            transmf.write('# FINAL ATMOSPHERE TRANSMISSION\n')
             for val in xrange(len(self.modtran_wl)):
                 data = '\t'.join('{0:f}'.format(self.transmittance[run][val])
+                                for run in xrange(len(self.visits)))
+                line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
+                transmf.write(line)
+        with open(outputfileAero, 'w') as transmf:
+            transmf.write('# AEROSOL TRANSMISSION\n')
+            for val in xrange(len(self.modtran_wl)):
+                data = '\t'.join('{0:f}'.format(self.lAeroTrans[run][val])
                                 for run in xrange(len(self.visits)))
                 line = '{0}\t{1}\n'.format(self.modtran_wl[val], data)
                 transmf.write(line)

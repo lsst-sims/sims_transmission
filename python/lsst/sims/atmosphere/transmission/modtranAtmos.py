@@ -201,8 +201,8 @@ class Atmosphere(object):
         data_p0, data_p1, data_p2, stdev = data.T
         mjd_scaled = numpy.arange(data_p0.size)
         print "_init_aer:  Start ", data_p0.size
-        print mjd_scaled
-        
+        self._aeroMinMJD =  mjd_scaled[0]
+        self._aeroMaxMJD =  mjd_scaled[-1]
         self._aer_p0_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_p0, s=0)
         self._aer_p1_spl = scipy.interpolate.UnivariateSpline(
@@ -243,6 +243,10 @@ class Atmosphere(object):
 
     def aerosols(self, mjd):
         """Return atmospheric aerosols parameters for a given mjd"""
+        # test mjd , no extrapolation allowed !
+        if mjd > self._aeroMaxMJD or  mjd < self._aeroMinMJD:
+            print "aerosols(): no MJD extrapolation allowed !"
+            raise
         ret = numpy.array([self._aer_p0_spl(mjd),
                 self._aer_p1_spl(mjd),
                 self._aer_p2_spl(mjd)])
