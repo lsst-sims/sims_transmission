@@ -16,6 +16,9 @@ import matplotlib.pyplot as pl
 from lsst.sims.atmosphere.transmission.modtranAtmos import *
 
 
+#
+# TESTS
+#
 
 def test_aerosolData():
     atmos = Atmosphere(10)
@@ -58,17 +61,51 @@ def test_aerosolData2():
     plt.xlabel("nm")
     plt.legend(strDay, loc="best")
 
+
 def test_getAerTransmittance():
     coef = numpy.array([  1.65058424e+00,  -2.15406291e+01 ,  6.63529808e+01])
     coef = numpy.array([  1.5,  -2.15406291e+01 ,  6.63529808e+01])
     wl = numpy.linspace(300, 1000, 1000)
     asl.getAerTransmittance(wl, coef, 1.0)
+    
+
+#
+# ETUDES
+#
+
+def evolutionAerosol():
+    """
+    create plot image for movie
+    """
+    atmos = Atmosphere(10)
+    atmos.init_main_parameters()
+    coef = atmos.aerosols(100)
+    print coef
+    wl = numpy.linspace(300, 1000, 1000)
+    asl.getAerTransmittance(wl, coef, 1.0)
+    wl = np.linspace(300, 1000, 512)    
+    pasDay = 120
+    nbPlot = pasDay*24
+    lday01 = np.linspace(0, pasDay, nbPlot, True)
+    for d1,idx in zip(lday01, range(nbPlot)):
+        print idx,d1
+        plt.figure(1)
+        plt.title("aerosol transmission")        
+        [plt.plot(wl,asl.getAerTransmittance(wl, atmos.aerosols(d1+_li*pasDay) , 1.0)) for _li in range(3)]
+        strDay = ["day %.2f"%(d1+_li*pasDay) for _li in range(3)]
+        plt.ylim(ymin=0.8, ymax=1.0)
+        plt.grid()
+        plt.xlabel("nm")
+        plt.legend(strDay, loc=4)
+        plt.savefig("/home/colley/temp/lsst/movie/aero%04d.png"%idx)
+        plt.close()
+
 
 #
 # MAIN
 #
 
-
-test_aerosolData2()
+evolutionAerosol()
+#test_aerosolData2()
 #test_getAerTransmittance()
 pl.show()

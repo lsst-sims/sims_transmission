@@ -9,7 +9,7 @@ import numpy.linalg as npl
 from scipy.interpolate import InterpolatedUnivariateSpline  # , splev, splrep
 
 
-S_PlotLevel = 1
+S_PlotLevel = 0
 S_Verbose = 1
 
 
