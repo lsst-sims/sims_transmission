@@ -270,7 +270,7 @@ class ModtranCards(object):
             allcards.append(card)
             #self._printCards(allcards)
         # Write data to output.
-        outfile = os.path.join(modtranDataDir, outfileRoot)        
+        outfile = os.path.join(modtranDataDir, outfileRoot)
         with open(os.path.join(outfile,outfileRoot) + '.tp5', 'w') as cardf:
             for run in allcards:
                 for card in run:
@@ -284,6 +284,7 @@ class ModtranCards(object):
         #modtranExecutable = os.getenv('MODTRAN_EXECUTABLE')
         #args = shlex.split(modtranExecutable)
         args =["modtran"]
+        args =["Mod4v3r1_F77_base.exe"]
         # Write name of modtran .tp5 file to run, and put into mod5root.in
         # input file.
         mfile = open('modroot.in', 'w')

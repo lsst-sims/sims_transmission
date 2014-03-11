@@ -10,7 +10,7 @@ Input data:
 A list of dictionaries sorted by date, with 4 specific keys:
     'ID'    the sequence id
     'MJD'   the date in mjd format
-    'ZANG'  the zenith angle of this pointing
+    'ZANG'  the zenith angle of this pointing in degree
     'TGRAY' the gray extinction factor
 
 Calling method:
@@ -127,7 +127,7 @@ class AuxTelSequence(object):
             # used modulo to do interpolation  no extrapolation !
             # may be not coherent with aerosol saison ? (JMC)    
             aerosolOnly = self.atmos.aerosols(mjd % asl.N_DAYS)
-            self.aerosol_visits.append(aerosolOnly + (z_angle,))
+            self.aerosol_visits.append(np.append(aerosolOnly, z_angle))
             if S_Verbose==1:
                 print "generateParameters mjd",mjd
                 print aerosolOnly, z_angle, self.aerosol_visits[-1]
@@ -269,12 +269,12 @@ class AuxTelSequence(object):
         wlFit = self.modtran_wl
         if S_Verbose >=1: print "wlFit: ",wlFit
         #vdm_wl = np.vander(wlFit, 3)
-        # Get polynomial roots as well as zenith angle
-        p0, p1, p2, z_ang = self.aerosol_visits[run]
+        # Get polynomial roots as well as zenith angle        
         if S_Verbose >=1: print "aerosol_visits[%d]:%s"%(run, str(self.aerosol_visits[run]))
+        p0, p1, p2, z_ang = self.aerosol_visits[run]
         pfit = np.array([p0, p1, p2])
         # Retrieve airmass from zenith angle
-        airmass = modtranTools.zenith2airmass(z_ang, site='lsst', unit='rad')
+        airmass = modtranTools.zenith2airmass(np.deg2rad(z_ang), site='lsst', unit='rad')
         if S_Verbose >=1: print "airmass: ",airmass
         aero = asl.getAerTransmittance(wlFit, pfit, airmass)
         #np.save("aero%d"%run, aero )        
@@ -289,8 +289,8 @@ class AuxTelSequence(object):
         """
         if S_Verbose: print "array transmittance:",self.transmittance
         modtranDataDir = os.getenv('MODTRAN_DATADIR')
-        outputfile = '{0}/{0}_final.plt'.format(self.outfilename)
-        outputfileAero = '{0}/{0}_aero.plt'.format(self.outfilename)
+        outputfile = '{0}/trans_final.plt'.format(self.outfilename)
+        outputfileAero = '{0}/trans_aero.plt'.format(self.outfilename)
         outputpath = os.path.join(modtranDataDir, outputfile)
         with open(outputpath, 'w') as transmf:
             transmf.write('# FINAL ATMOSPHERE TRANSMISSION\n')
