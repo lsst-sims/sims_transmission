@@ -41,7 +41,7 @@ class Atmosphere(object):
     def __init__(self, seed=_default_seed):
         
         """Initialize Atmosphere class"""
-        self.seed = _default_seed
+        self.seed = seed
         # Starting/ending date        
         # Seed for the randoms
         # Ozone spline
