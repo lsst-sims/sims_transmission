@@ -108,9 +108,9 @@ class Atmosphere(object):
         fft = numpy.fft.fft(data)
         # Random
         mu, sig = 0, numpy.abs(fft)
-        numpy.random.seed(self.seed)
+        #numpy.random.seed(self.seed)
         Famp = numpy.random.normal(mu, sig)
-        numpy.random.seed(self.seed)
+        #numpy.random.seed(self.seed)
         phi = numpy.random.uniform(0, 2 * numpy.pi, ndays)
         Fphase = numpy.cos(phi) + 1j*numpy.sin(phi)
         random_data = numpy.fft.ifft(Famp * Fphase)
@@ -171,9 +171,9 @@ class Atmosphere(object):
         fft = numpy.fft.fft(data)
         # Random
         mu, sig = 0, numpy.abs(fft)
-        numpy.random.seed(self.seed)
+        #numpy.random.seed(self.seed)
         Famp = numpy.random.normal(mu, sig*2.0)
-        numpy.random.seed(self.seed)
+        #numpy.random.seed(self.seed)
         phi = numpy.random.uniform(0, 2*numpy.pi, ndays)
         Fphase = numpy.cos(phi) + 1j*numpy.sin(phi)
         random_data = numpy.fft.ifft(Famp * Fphase)

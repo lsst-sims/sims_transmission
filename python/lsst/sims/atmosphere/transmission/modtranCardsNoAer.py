@@ -284,7 +284,10 @@ class ModtranCards(object):
         #modtranExecutable = os.getenv('MODTRAN_EXECUTABLE')
         #args = shlex.split(modtranExecutable)
         args =["modtran"]
-        args =["Mod4v3r1_F77_base.exe"]
+        print "avec modtran"
+        # to have TP7 output
+        #args =["Mod4v3r1_F77_base.exe"]
+        #print "avecMod4v3r1_F77_base.exe"
         # Write name of modtran .tp5 file to run, and put into mod5root.in
         # input file.
         mfile = open('modroot.in', 'w')

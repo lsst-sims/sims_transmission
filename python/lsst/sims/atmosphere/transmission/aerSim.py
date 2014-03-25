@@ -4,7 +4,6 @@ import os
 import numpy as np
 import matplotlib.pyplot as plt
 import numpy.fft as npf
-import numpy.random as npr
 import numpy.linalg as npl
 from scipy.interpolate import InterpolatedUnivariateSpline  # , splev, splrep
 
@@ -104,7 +103,7 @@ def select_daily_values(wl, ambin):
             mjd_avg.append(d)
             data_avg.append(avg_data)
             # draw random value
-            npr.shuffle(daily_data)
+            np.random.shuffle(daily_data)
             data_days[d] = daily_data[0]
         else:
             mis_vals.append(d)
@@ -278,12 +277,12 @@ def randomize(eigenvals, eigenvect, seed=10):
     evlen = eigenvals.shape
     #print "randomize ", seed
     #npr.seed(seed)
-    s = npr.randint(0, 10000, evlen)
+    s = np.random.randint(0, 10000, evlen)
     randvalues = np.zeros(evlen)
     #randvector = np.zeros(eigenvals.shape, dtype='complex')
     for ival, val in enumerate(eigenvals):
         #npr.seed(s[ival])
-        randvalues[ival] = npr.normal(0, np.sqrt(np.abs(val)))
+        randvalues[ival] = np.random.normal(0, np.sqrt(np.abs(val)))
         # npr.seed(s)
         # phi = npr.uniform(0, 2 * np.pi)
         # randvalues[ival] = amp * (np.cos(phi) + 1j * np.sin(phi))
@@ -295,6 +294,8 @@ def randomize(eigenvals, eigenvect, seed=10):
 #--------
 
 def main(seed=10):
+    print "main ", seed
+    np.random.seed(seed)    
     master_vect, nfreq = vectorize(aerstr, amstr)
     # print master_vect
     npar = master_vect.shape[0]
@@ -307,9 +308,8 @@ def main(seed=10):
     # print 'Covariance Matrix:\n', covariance_matrix
     # print 'Eigenvalues:\n', eigenvalues
     # print 'Eigenvectors:\n', eigenvectors
-    print "main ", seed
-    npr.seed(seed)
-    sprseed = npr.randint(0, 100000, nfreq)
+    sprseed = np.random.randint(0, 100000, nfreq)
+    print "sprseed", sprseed[10:]
     for freq in xrange(nfreq):
         master_rand[:, freq] = randomize(eigenvalues, eigenvectors, sprseed[freq])
     for par in xrange(npar):
@@ -330,7 +330,7 @@ def getAerParameters(seed=10, airmass='0'):
     if type(airmass) == int:
         airmass = str(airmass)
     # Get simulated parameters in a dictionary
-    print "getAerParameters ",seed
+    print "getAerParameters ",seed    
     outdict = main(seed)
     # Cast them into a vector
     outvect = np.zeros((N_DAYS - 1, len(aerstr)))
