@@ -105,16 +105,19 @@ class AuxTelSequence(object):
         self.offsetMJD = MJDtools.toMJD(started_year, 12, 21)
 
 
-    def generateParameters(self, seed=_default_seed):
-        """Generate the atmospheric parameters over time.
+    def generateParameters(self, pFileAero):
+        """
+        pFileAero : file coef aerosol
+        
+        Generate the atmospheric parameters over time.
         Returns a list of dictionaries containing the modtran
         information for each opsim visit (in the same order).
         """
         self.initPointingSequence()
         # Instantiate the Atmosphere class
-        self.atmos = Atmosphere(seed)
+        self.atmos = Atmosphere()
         # Generate main atmosphere parameters sequence
-        self.atmos.init_main_parameters()
+        self.atmos.init_main_parameters(pFileAero)
         # Associate a value of these parameters for each pointing
         for visit_dict in self.visits:
             # Get ID and date
@@ -134,6 +137,7 @@ class AuxTelSequence(object):
         # Init transmission array
         self.initTransmissionArray(len(self.modtran_visits))
         print 'generateParameters FIN'
+
 
     def fillModtranDictionary(self, mjd, obsid, z_angle):
         """Return a dictionary filled with all Modtran parameters

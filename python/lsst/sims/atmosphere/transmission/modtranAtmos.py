@@ -41,9 +41,9 @@ class Atmosphere(object):
     def __init__(self, seed=_default_seed):
         
         """Initialize Atmosphere class"""
+        self.seed = _default_seed
         # Starting/ending date        
         # Seed for the randoms
-        self.seed = seed
         # Ozone spline
         self._o3_spl = None
         # Water vapor spline
@@ -191,11 +191,11 @@ class Atmosphere(object):
         sc_out = h2o_sc_factor[seas_idx]
         return sc_out / 449.23
 
-    def _init_aer(self):
+    def _init_aer(self, pFileAero):
         """
         for each polynomial coefficient fit with spline ie spline scipy object
         """
-        data = self._simulate_aer()
+        data = self._simulate_aer_file(pFileAero)
         print data.shape
         print data[99:102]
         data_p0, data_p1, data_p2, stdev = data.T
@@ -210,25 +210,32 @@ class Atmosphere(object):
         self._aer_p2_spl = scipy.interpolate.UnivariateSpline(
             mjd_scaled, data_p2, s=0)
         print "_init_aer:  End"
+    
         
+    def _simulate_aer_file(self, pFileAero):
+        data = asl.getAerParametersFromFile(pFileAero)
+        return data
         
+       
     def _simulate_aer(self):
         """Simulate the aerosol optical depth as a function of wavelength
         and return 2nd degree polynomial fitting parameters
         (cf. aerSim.py for more info)"""
         print "_simulate_aer: start"
-        data = asl.getAerParameters(self.seed, airmass='0')
+        oSim = asl.SimuAeroStruct()
+        data = asl.fitAeroParameters(oSim, self.seed, airmass='0')
         print "_simulate_aer: end"
         arrdata = numpy.array(data)
         return arrdata
 
-    def init_main_parameters(self, nvulc=0):
+
+    def init_main_parameters(self, pFileAero, nvulc=0):
         """Initialize the main atmospheric parameters"""
         # if not self._initialized_array:
             # self._init_mjdArray()
         self._init_o3()
         self._init_h2o()
-        self._init_aer()
+        self._init_aer(pFileAero)
         # self._init_vulc(nvulc)
 
     def ozone(self, mjd):

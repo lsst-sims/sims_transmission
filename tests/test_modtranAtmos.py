@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 #np.random.seed(10)
 
-np.random.seed(620)
+np.random.seed(60)
 
 
 import matplotlib.pyplot as pl
@@ -105,7 +105,7 @@ def evolutionAerosol():
 # MAIN
 #
 
-evolutionAerosol()
-#test_aerosolData2()
+#evolutionAerosol()
+test_aerosolData2()
 #test_getAerTransmittance()
 pl.show()
