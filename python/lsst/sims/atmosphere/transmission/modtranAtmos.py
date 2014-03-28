@@ -195,7 +195,10 @@ class Atmosphere(object):
         """
         for each polynomial coefficient fit with spline ie spline scipy object
         """
-        data = self._simulate_aer_file(pFileAero)
+        if pFileAero != "":
+            data = self._simulate_aer_file(pFileAero)
+        else:
+            data = self._simulate_aer()
         print data.shape
         print data[99:102]
         data_p0, data_p1, data_p2, stdev = data.T
@@ -229,7 +232,7 @@ class Atmosphere(object):
         return arrdata
 
 
-    def init_main_parameters(self, pFileAero, nvulc=0):
+    def init_main_parameters(self, pFileAero="", nvulc=0):
         """Initialize the main atmospheric parameters"""
         # if not self._initialized_array:
             # self._init_mjdArray()

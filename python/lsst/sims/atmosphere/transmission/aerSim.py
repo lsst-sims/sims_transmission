@@ -14,14 +14,9 @@ import numpy.linalg as npl
 from scipy.interpolate import InterpolatedUnivariateSpline  # , splev, splrep
 
 
-S_PlotLevel = 0
+S_PlotLevel = 2
 S_Verbose = 1
 
-
-# LOCAL
-#------
-# mainpath = '/Users/alexandreboucaud/work/LSST/calib/aerosols/'
-# plotpath = mainpath + 'plots/'
 
 # LSST
 #-----
@@ -497,7 +492,7 @@ def write_scaled_data(oSim):
 
 
 ####################
-# BEGINNING OF FILE
+# CLASS
 ####################
 
 
@@ -507,8 +502,14 @@ class SimuAeroStruct(object):
             self.loadSimu(pNameFile)
             return        
         # Mauna Loa data
-        data_mauna = np.loadtxt(S_mauna)
-        mjds, mjdy, airmass, aer380, aer440, aer500, aer675, aer870, ang_e, fmf = data_mauna.T
+        self.FileRawData = S_mauna
+        #self.FileRawData = S_casleo
+        self.RawData = np.loadtxt(self.FileRawData).T
+        return 
+        # ang_e : angstrom exposant
+        # fmf   : fine mode fraction
+        # 0     1      2       3        4      5     6         7      8      9
+        mjds, mjdy, airmass, aer380, aer440, aer500, aer675, aer870, ang_e, fmf = self.RawData
         # starts at 0
         mjd = mjds - mjds[0]
         # cut redondant values
@@ -579,6 +580,7 @@ class SimuAeroStruct(object):
     def loadSimu(self, pFile):
         pass
     
+    
     def select_daily_values(self, wl, ambin):
         """
         Compute the average daily value, if any.
@@ -625,3 +627,28 @@ class SimuAeroStruct(object):
         tdict = fill_blanks(tdict)
         fdict = correct_seasonal_var(tdict, size)
         return fdict
+    
+#
+# PLOT
+#
+
+    def plotRawData(self):       
+        idx = np.argsort(self.RawData[1])
+        onlyFile = self.FileRawData.split("/")[-1]
+        plt.figure()
+        plt.title("%s: aer380"%onlyFile)   
+        plt.plot(self.RawData[1][idx], self.RawData[3][idx]*100)
+        #plt.plot(self.RawData[1][idx], self.RawData[2][idx],'*')
+        #plt.legend(["aer380*100", 'airmass'], loc="best")
+        plt.xlabel("mjd")
+        plt.grid()
+        #
+        plt.figure()
+        plt.title("%s: aer870"%onlyFile)   
+        plt.plot(self.RawData[1][idx], self.RawData[7][idx]*100)
+        #plt.plot(self.RawData[1][idx], self.RawData[2][idx],'*')
+        #plt.legend(["aer870*100", 'airmass'], loc="best")
+        plt.xlabel("mjd")
+        plt.grid()
+        
+    

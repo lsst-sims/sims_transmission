@@ -4,11 +4,11 @@ Created on 11 févr. 2014
 
 @author: colley
 '''
+
 import numpy as np
 import matplotlib.pyplot as plt
 
 #np.random.seed(10)
-
 np.random.seed(60)
 
 
@@ -105,7 +105,7 @@ def evolutionAerosol():
 # MAIN
 #
 
-#evolutionAerosol()
-test_aerosolData2()
+evolutionAerosol()
+#test_aerosolData2()
 #test_getAerTransmittance()
 pl.show()

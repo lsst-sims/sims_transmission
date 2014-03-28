@@ -6,7 +6,24 @@ Created on 25 mars 2014
 import lsst.sims.atmosphere.transmission.aerSim as aSol
 import numpy as np
 import matplotlib.pyplot as pl
+import scipy.interpolate as spi
+import scipy.signal as sps
 
+
+def smooth(sig, nWindow):
+    """
+    lissage d'un signal par un fenetre gaussienne de nWindow echantillons
+    """
+    w = sps.gaussian(nWindow,nWindow/10)
+    s = w.sum()
+    a = sps.fftconvolve(sig, w/s)
+    print len(sig)
+    print len(a)
+    return a[nWindow/2-1:-nWindow/2]
+
+#
+# TEST
+#
 
 def test_getAerParametersFromFile(pFile):
     aCoef = aSol.getAerParametersFromFile(pFile)
@@ -16,67 +33,150 @@ def test_getAerParametersFromFile(pFile):
     aSol.getAerTransmittance(wl, aCoef[11, :3], 1.0)
     aSol.getAerTransmittance(wl, aCoef[12, :3], 1.0)
     
-    
+
+def test_plotRawData():
+    oSimu = aSol.SimuAeroStruct()
+    oSimu.plotRawData()
+
+
 #
-# TEST
+# CHECK
+#
+def getOptDeep(tps, lInter):
+    return np.array([oInter(tps) for oInter in lInter])
+
+
+def interpolSelectRawData(pRaw):
+    idxSel = np.where(pRaw[2] < 1.5)[0]
+    rData = pRaw[:,idxSel]    
+    lInter = [spi.interp1d(rData[0], optDeep) for optDeep in rData[3:8]]
+    wlNM = np.array([380, 440, 500, 675, 870])
+    pl.figure()
+    print rData.shape
+    pl.plot(wlNM, np.exp(-getOptDeep(rData[0,2000], lInter)))
+    pl.plot(wlNM, np.exp(-getOptDeep(rData[0,2500], lInter)))
+    pl.plot(wlNM, np.exp(-getOptDeep(rData[0,3000], lInter)))
+    pl.ylim(ymin=0.8, ymax=1.0)
+    pl.xlabel("nm")
+    pl.grid()
+    return rData, lInter
+
+    
+    
+def viewRawData():
+    oSimu = aSol.SimuAeroStruct()
+    #idx = np.where(366*2<oSimu.RawData[0] and oSimu.RawData[0 > 366)[0]
+    #rData = oSimu.RawData[:,idx]
+    rData = oSimu.RawData
+    pl.figure()
+    pl.plot(rData[0], rData[4])
+    pl.grid()
+    pl.figure()
+    pl.plot(rData[0], rData[4]*100)
+    pl.plot(rData[0], rData[2],".")
+    pl.grid()
+    # selection entre 1 et 1.5 airmass
+    idxSel = np.where(oSimu.RawData[2] < 1.5)[0]
+    rData = oSimu.RawData[:,idxSel]
+    pl.figure()
+    pl.plot(rData[0], rData[4]*100)
+    pl.plot(rData[0], rData[2],".")
+    pl.grid()
+    # fit spline
+    #tck = spi.splrep(rData[0], rData[4]*100, k=1)
+    #tck = spi.splrep(rData[0], rData[4]*100, s=8000)    
+    xfin = np.linspace(rData[0][0], rData[0][-1], 500*len(rData[0]))
+    deltaXfin_mn = 24*60*(rData[0][-1] - rData[0][0]) / len(xfin)
+    print deltaXfin_mn
+    #pl.figure()
+    #pl.plot(xfin, spi.splev(xfin, tck))
+    #pl.plot(rData[0], rData[4]*100,'.')
+    #pl.plot(tck[0], spi.splev(tck[0], tck),'*')
+    #pl.grid()
+    # linear 
+    interLin = spi.interp1d(rData[0], rData[4]*100)
+    sigGrid = interLin(xfin)
+    pl.figure()
+    pl.title('MaunaLoa_1997-2009_final.dat: optical depth at 380nm')
+    #pl.plot(xfin, sigGrid)
+    pl.plot(rData[0], rData[4])
+    sifSmooth = smooth(sigGrid, int(3*60/deltaXfin_mn))
+    print sifSmooth.shape
+    #pl.plot(xfin, sifSmooth)
+    pl.xlabel('day')
+    pl.grid()
+    # 
+    wlNM = np.array([380, 440, 500, 675, 870])
+    pl.figure()
+    print rData.shape
+    pl.plot(wlNM, np.exp(-rData[3:8,2000]))
+    pl.plot(wlNM, np.exp(-rData[3:8,2500]))
+    pl.plot(wlNM, np.exp(-rData[3:8,3000]))
+    pl.ylim(ymin=0.8, ymax=1.0)
+    pl.xlabel("nm")
+    pl.grid()
+    interpolSelectRawData(oSimu.RawData)
+    
+
+def multiplotRawData():
+    oSimu = aSol.SimuAeroStruct()
+    data, lInter = interpolSelectRawData(oSimu.RawData)
+    beginDay = 4050
+    pasDay = 120
+    nbPlot = pasDay*24
+    wl = np.array([380, 440, 500, 675, 870])
+    lday01 = np.linspace(0, pasDay, nbPlot, True)+beginDay
+    for d1,idx in zip(lday01, range(nbPlot)):
+        print idx,d1
+        pl.figure()
+        pl.title("aerosol transmission")        
+        [pl.plot(wl,np.exp(-getOptDeep(d1+_li*pasDay, lInter))) for _li in range(3)]
+        strDay = ["day %.2f"%(d1+_li*pasDay) for _li in range(3)]
+        pl.ylim(ymin=0.8, ymax=1.0)
+        pl.grid()
+        pl.xlabel("nm")
+        pl.legend(strDay, loc=4)
+        pl.savefig("/home/colley/temp/lsst/movie/aeroRaw%04d.png"%idx)
+        pl.close()
+        
+        
+def multiplotRawData2():
+    """
+    not validate
+    """
+    oSimu = aSol.SimuAeroStruct()
+    data, lInter = interpolSelectRawData(oSimu.RawData)
+    beginDay = 4050
+    pasDay = 2
+    nbPlot = pasDay*24
+    wl = np.array([380, 440, 500, 675, 870])
+    lday01 = np.linspace(0, pasDay, nbPlot, True)+beginDay
+    aTps = np.outer(np.ones(3),lday01 )
+    aTps  += np.array([0,pasDay, 2* pasDay]).reshape(3,1)
+    aTps = aTps.ravel()
+    aTrans = np.exp(-np.array([oInter(aTps) for oInter in lInter])).T
+    for d1,idx in zip(lday01, range(nbPlot)):
+        print idx,d1
+        pl.figure()
+        pl.title("aerosol transmission")        
+        [pl.plot(wl,aTrans[idx+_li]) for _li in range(3)]
+        strDay = ["day %.2f"%(d1+_li*pasDay) for _li in range(3)]
+        pl.ylim(ymin=0.8, ymax=1.0)
+        pl.grid()
+        pl.xlabel("nm")
+        pl.legend(strDay, loc=4)
+        pl.savefig("/home/colley/temp/lsst/movie/aeroRaw%04d.png"%idx)
+        pl.close()
+  
+#
+# MAIN
 #
 S_PathFileSimu = "../testSImuAero.txt"
 
-test_getAerParametersFromFile(S_PathFileSimu) 
+#test_getAerParametersFromFile(S_PathFileSimu)
+#test_plotRawData()
+#interpolRawData()
+viewRawData()
+#multiplotRawData()
 
 pl.show()
-
-###########
-# TESTING #
-###########
-
-# nval = 30
-# imin = 650
-# imax = imin + nval
-# outdict = main()
-# am = '0'
-# numesh = np.arange(NU_MIN, NU_MAX, NU_STEP)
-# lsstwl = 1.e7 / numesh  # convert frequencies (cm-1)into wvlength (nm)
-# lwv = np.log(lsstwl)
-
-# vcur = np.vander(lwv, P_DEG + 1)
-
-# testarr = np.zeros((nval, len(aerstr)))
-# for iwl, wl in enumerate(aerstr):
-#     # testarr[:, iwl] = outdict[wl][am][imin:imax]
-#     testarr[:, iwl] = outdict[wl][am]
-
-# Construct the Vandermonde matrix for standard deviation
-# vx = np.vander(laer_wl, P_DEG + 1)
-# aer_wl = np.exp(laer_wl)
-
-# col = ['b', 'r', 'm', 'g', 'c']
-# xplot = np.arange(N_DAYS - 1)
-# xplot2 = np.arange(0, N_DAYS - 1, 0.5)
-
-# f, ax = plt.subplots(3, 2, sharex=True)
-# pf = np.zeros((nval, 3))
-# for day in xrange(nval):
-#     lvect = testarr[day]
-#     # Fit
-#     pfit = np.polyfit(laer_wl, lvect, P_DEG)
-#     pf[day] = pfit
-
-# p0 = pf[:, 0]
-# p1 = pf[:, 1]
-# p2 = pf[:, 2]
-# p0sp = splrep(xplot, p0)
-# p1sp = splrep(xplot, p1)
-# p2sp = splrep(xplot, p2)
-# p02 = splev(xplot2, p0sp)
-# p12 = splev(xplot2, p1sp)
-# p22 = splev(xplot2, p2sp)
-
-# ax[0, 0].plot(p0, 'r,')
-# ax[1, 0].plot(p1, 'b,')
-# ax[2, 0].plot(p2, 'g,')
-# ax[0, 1].plot((p02-p0)/p0, 'r,')
-# ax[1, 1].plot((p12-p1)/p1, 'b,')
-# ax[2, 1].plot((p22-p2)/p2, 'g,')
-
-# plt.show()
