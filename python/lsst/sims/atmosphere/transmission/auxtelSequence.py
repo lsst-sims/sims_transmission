@@ -10,7 +10,9 @@ Input data:
 A list of dictionaries sorted by date, with 4 specific keys:
     'ID'    the sequence id
     'MJD'   the date in mjd format
-    'ZANG'  the zenith angle of this pointing in degree
+    'PTG'   [ZANG ,  AZIM]   
+        * ZANG: the zenith angle of this pointing in degree
+        * AZIM: the azimuth angle of this pointing in degree, 0 South
     'TGRAY' the gray extinction factor
 
 Calling method:
@@ -88,6 +90,17 @@ class AuxTelSequence(object):
         self.transmittance = []
         # aero transmittance
         self.lAeroTrans = []
+        # dependence azimutal model
+        #
+        # factor(azi= 1 + a*cos (azi + theta)
+        #  * factor is 2pi periodic
+        #  * min max factor  +/-a*100 %
+        # DependAziAmp is a :  dependence azimut amplitude
+        self.DependAziAmp = 0.05
+        # DependAziTheta is tetha :  dependence azimut delta phase
+        # in degree 
+        self.DependAziTheta = 20
+        
 
     def changeList(self, newlist):
         """Input a new sequence list."""
@@ -123,30 +136,32 @@ class AuxTelSequence(object):
             # Get ID and date
             vis_id = visit_dict['ID']
             mjd = visit_dict['MJD']
-            z_angle = visit_dict['ZANG']
+            angle = visit_dict['PTG']
             # Get atmosphere parameters
-            modtran_dict = self.fillModtranDictionary(mjd-self.offsetMJD, vis_id, z_angle)
+            modtran_dict = self.fillModtranDictionary(mjd-self.offsetMJD, vis_id, angle)
             self.modtran_visits.append(modtran_dict)
+            #
             # used modulo to do interpolation  no extrapolation !
             # may be not coherent with aerosol saison ? (JMC)    
             aerosolOnly = self.atmos.aerosols(mjd % asl.N_DAYS)
-            self.aerosol_visits.append(np.append(aerosolOnly, z_angle))
+            self.aerosol_visits.append(np.append(aerosolOnly, angle[0]))
             if S_Verbose==1:
                 print "generateParameters mjd",mjd
-                print aerosolOnly, z_angle, self.aerosol_visits[-1]
+                print aerosolOnly, angle[0], self.aerosol_visits[-1]
         # Init transmission array
         self.initTransmissionArray(len(self.modtran_visits))
         print 'generateParameters FIN'
 
 
-    def fillModtranDictionary(self, mjd, obsid, z_angle):
+    def fillModtranDictionary(self, mjd, obsid, angle):
         """Return a dictionary filled with all Modtran parameters
         for a given visit."""
         if not self.atmos:
             raise ValueError('Atmosphere class not called')
         mdict = {}
         mdict['ID'] = obsid
-        mdict['ZANGLE'] = z_angle
+        mdict['ZANGLE'] = angle[0]
+        mdict['AZIM'] = angle[1]
         mdict['MODEL'] = self.atmos.model(mjd)
         mdict['O3'] = self.atmos.ozone(mjd)
         mdict['H2O'] = self.atmos.wvapor(mjd)
@@ -185,8 +200,14 @@ class AuxTelSequence(object):
             print "getAerTransmittance(%d) mean %f, std %f"%(run, aertrans.mean(), aertrans.std()) 
             # Retrieve gray extinction
             t_gray = self.visits[run]['TGRAY']
+            azimuth = self.visits[run]['PTG'][1]
             # Multiply both to get full transmission
-            self.transmittance[run] = t_gray * modtrans * aertrans
+            finalTrans = t_gray * modtrans * aertrans
+            # add azimutal dependence
+            aziDependence = 1 + self.DependAziAmp*\
+                    (np.cos(np.deg2rad(azimuth + self.DependAziTheta))-1)                    
+            #self.transmittance[run] = finalTrans*aziDependence
+            self.transmittance[run] = finalTrans
             print t_gray,  modtrans, aertrans
         if save:
             self.saveTrans()

@@ -502,8 +502,8 @@ class SimuAeroStruct(object):
             self.loadSimu(pNameFile)
             return        
         # Mauna Loa data
-        self.FileRawData = S_mauna
-        #self.FileRawData = S_casleo
+        #self.FileRawData = S_mauna
+        self.FileRawData = S_casleo
         self.RawData = np.loadtxt(self.FileRawData).T
         return 
         # ang_e : angstrom exposant
@@ -577,6 +577,10 @@ class SimuAeroStruct(object):
         # dictlist = ['laer_days', 'laer_yspl', 'laer_final']
 
 
+    def getFileRawData(self):
+        return self.FileRawData.split("/")[-1]
+    
+    
     def loadSimu(self, pFile):
         pass
     

@@ -42,12 +42,14 @@ def test_plotRawData():
 #
 # CHECK
 #
+
 def getOptDeep(tps, lInter):
     return np.array([oInter(tps) for oInter in lInter])
 
 
 def interpolSelectRawData(pRaw):
-    idxSel = np.where(pRaw[2] < 1.5)[0]
+    idxSel = np.where(pRaw[2] < 3)[0]
+    #idxSel = np.where(np.logical_and(pRaw[2] > 1.5, pRaw[2] < 2))[0]
     rData = pRaw[:,idxSel]    
     lInter = [spi.interp1d(rData[0], optDeep) for optDeep in rData[3:8]]
     wlNM = np.array([380, 440, 500, 675, 870])
@@ -109,9 +111,9 @@ def viewRawData():
     wlNM = np.array([380, 440, 500, 675, 870])
     pl.figure()
     print rData.shape
-    pl.plot(wlNM, np.exp(-rData[3:8,2000]))
-    pl.plot(wlNM, np.exp(-rData[3:8,2500]))
-    pl.plot(wlNM, np.exp(-rData[3:8,3000]))
+    pl.plot(wlNM, np.exp(-rData[3:8,200]))
+    pl.plot(wlNM, np.exp(-rData[3:8,250]))
+    pl.plot(wlNM, np.exp(-rData[3:8,300]))
     pl.ylim(ymin=0.8, ymax=1.0)
     pl.xlabel("nm")
     pl.grid()
@@ -122,6 +124,7 @@ def multiplotRawData():
     oSimu = aSol.SimuAeroStruct()
     data, lInter = interpolSelectRawData(oSimu.RawData)
     beginDay = 4050
+    beginDay = 12
     pasDay = 120
     nbPlot = pasDay*24
     wl = np.array([380, 440, 500, 675, 870])
@@ -129,7 +132,7 @@ def multiplotRawData():
     for d1,idx in zip(lday01, range(nbPlot)):
         print idx,d1
         pl.figure()
-        pl.title("aerosol transmission")        
+        pl.title("aerosol trans. %s"% oSimu.getFileRawData())        
         [pl.plot(wl,np.exp(-getOptDeep(d1+_li*pasDay, lInter))) for _li in range(3)]
         strDay = ["day %.2f"%(d1+_li*pasDay) for _li in range(3)]
         pl.ylim(ymin=0.8, ymax=1.0)
@@ -142,7 +145,7 @@ def multiplotRawData():
         
 def multiplotRawData2():
     """
-    not validate
+    try to improve time execution , not validate
     """
     oSimu = aSol.SimuAeroStruct()
     data, lInter = interpolSelectRawData(oSimu.RawData)
@@ -155,7 +158,7 @@ def multiplotRawData2():
     aTps  += np.array([0,pasDay, 2* pasDay]).reshape(3,1)
     aTps = aTps.ravel()
     aTrans = np.exp(-np.array([oInter(aTps) for oInter in lInter])).T
-    for d1,idx in zip(lday01, range(nbPlot)):
+    for d1, idx in zip(lday01, range(nbPlot)):
         print idx,d1
         pl.figure()
         pl.title("aerosol transmission")        
@@ -168,15 +171,17 @@ def multiplotRawData2():
         pl.savefig("/home/colley/temp/lsst/movie/aeroRaw%04d.png"%idx)
         pl.close()
   
+
 #
 # MAIN
 #
+
 S_PathFileSimu = "../testSImuAero.txt"
 
 #test_getAerParametersFromFile(S_PathFileSimu)
 #test_plotRawData()
 #interpolRawData()
-viewRawData()
-#multiplotRawData()
+#viewRawData()
+multiplotRawData()
 
 pl.show()
