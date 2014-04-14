@@ -9,6 +9,8 @@ import matplotlib.pyplot as pl
 import scipy.interpolate as spi
 import scipy.signal as sps
 
+aSol.S_PlotLevel = 2
+
 
 def smooth(sig, nWindow):
     """
@@ -170,8 +172,112 @@ def multiplotRawData2():
         pl.legend(strDay, loc=4)
         pl.savefig("/home/colley/temp/lsst/movie/aeroRaw%04d.png"%idx)
         pl.close()
-  
+ 
+#
+# CLASS AeronetInterpol
+#  
 
+def test_AeronetInterpol_plotXXX():
+    obj = aSol.AeronetInterpol()
+    obj.plotHistoAM()
+    obj.plotAM()
+    obj.plotFMF()
+
+
+def test_AeronetInterpol_interpolSplineInTime():
+    obj = aSol.AeronetInterpol()
+    xfin=np.linspace(300, 1100, 1000)
+    obj.interpolSplineInTime(23, xfin)
+    obj.interpolSplineInTime(50, xfin)
+    obj.interpolSplineInTime(170, xfin)
+    obj.interpolSplineInTime(220, xfin)
+    obj.interpolSplineInTime(300, xfin)
+    obj.interpolSplineInTime(340, xfin)
+    obj.interpolSplineInTime(360, xfin)
+
+
+def AeronetInterpol_studyFit():
+    obj = aSol.AeronetInterpol()
+    tps = 99.9
+    aidxTps = np.where(np.logical_and(obj.RawData[0]> tps, obj.RawData[0]<tps+2))[0]
+    print aidxTps    
+    idx = aidxTps[0]
+    print tps 
+    print "time : ",obj.RawData[0,idx-2: idx+2]
+    print obj.RawData[0,idx-1: idx+1]
+    obj.plotTransmission(idx)
+    xObs = obj.Wl
+    yObs = np.exp(-obj.RawData[3:8, idx])
+    
+    #tck = spi.splrep(xObs, yObs, k=2, t=np.array([550])) 
+    tck = spi.splrep(xObs, yObs, k=2, task=-1,t=np.array([580])) 
+    tck = spi.splrep(xObs, yObs, k=2,t=np.array([600])) 
+    xfin=np.linspace(300, 900, 1000)
+    pl.plot(xfin, spi.splev(xfin, tck))
+    print tck       
+
+
+def test_AeronetInterpol_interpolONeil():
+    obj = aSol.AeronetInterpol()
+    obj.interpolONeil(1110)
+    obj.interpolONeil(2110)
+    obj.interpolONeil(3110)
+    obj.interpolONeil(4110)
+
+
+def test_AeronetInterpol_interpolONeilInTime():
+    obj = aSol.AeronetInterpol()
+    xfin = np.linspace(300, 1100, 1000)
+    obj.interpolONeilInTime(23, xfin)
+    obj.interpolONeilInTime(50, xfin)
+    obj.interpolONeilInTime(170, xfin)
+    obj.interpolONeilInTime(220, xfin)
+    obj.interpolONeilInTime(300, xfin)
+    obj.interpolONeilInTime(340, xfin)
+    obj.interpolONeilInTime(360, xfin)
+
+
+def AeronetInterpol_multiplotONeil():
+    oSim = aSol.AeronetInterpol()
+    beginDay = 230
+    endDay = 130 +beginDay
+    pasDay = 1./25
+    nbPlot = int((endDay - beginDay)/pasDay)
+    lday01 = np.linspace(beginDay, endDay, nbPlot, True)
+    xfin = np.linspace(300, 1100, 1000)
+    for d1,idx in zip(lday01, range(nbPlot)):
+        print idx,d1
+        pl.figure()
+        pl.title("aerosol trans. %s fit O'Neil"% oSim.getFileRawData())        
+        oSim.interpolONeilInTimeCache(d1, xfin)
+        pl.xlabel("nm")
+        pl.savefig("/home/colley/temp/lsst/movie/aeroONeil%04d.png"%idx)
+        pl.close()
+    
+
+def check_correl():
+    oSim = aSol.AeronetInterpol()
+    print "aer380"
+    print np.corrcoef(oSim.RawData[[2,3]])
+    print "aer440"
+    print np.corrcoef(oSim.RawData[[2,4]])
+    print "aer500"
+    print np.corrcoef(oSim.RawData[[2,5]])
+    print "aer675"
+    print np.corrcoef(oSim.RawData[[2,6]])
+    print "aer870"
+    print np.corrcoef(oSim.RawData[[2,7]])
+    
+    print "aer380 cor ?"
+    copyData = oSim.RawData[[2,3]].copy()
+    copyData[1] = copyData[1]*copyData[0]
+    print np.corrcoef(copyData)
+    
+    print np.corrcoef(oSim.RawData[[1,3]])
+    print np.corrcoef(oSim.RawData[[0,1]])
+    
+    print np.corrcoef(oSim.RawData[3:8,:])
+     
 #
 # MAIN
 #
@@ -182,6 +288,18 @@ S_PathFileSimu = "../testSImuAero.txt"
 #test_plotRawData()
 #interpolRawData()
 #viewRawData()
-multiplotRawData()
+#multiplotRawData()
+
+#
+# CLASS AeronetInterpol
+
+#test_AeronetInterpol_plotXXX()
+#AeronetInterpol_studyFit()
+#test_AeronetInterpol_interpolONeil()
+#test_AeronetInterpol_interpolSplineInTime()
+#test_AeronetInterpol_interpolONeilInTime()
+#AeronetInterpol_multiplotONeil()
+check_correl()
+
 
 pl.show()

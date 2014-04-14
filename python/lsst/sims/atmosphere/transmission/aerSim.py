@@ -12,9 +12,9 @@ import matplotlib.pyplot as plt
 import numpy.fft as npf
 import numpy.linalg as npl
 from scipy.interpolate import InterpolatedUnivariateSpline  # , splev, splrep
+import scipy.interpolate as spi
 
-
-S_PlotLevel = 2
+S_PlotLevel = 0
 S_Verbose = 1
 
 
@@ -496,8 +496,237 @@ def write_scaled_data(oSim):
 ####################
 
 
+class AeronetInterpol(object):
+    def __init__(self, pFileAERO=S_casleo):
+        """
+        file format
+          ang_e : angstrom exposant
+          fmf   : fine mode fraction
+          mjdy = mjds mod year
+          0     1      2       3        4      5     6         7      8      9
+        mjds, mjdy, airmass, aer380, aer440, aer500, aer675, aer870, ang_e, fmf
+       
+        """
+        self.FileRawData = pFileAERO        
+        self.RawData = np.loadtxt(self.FileRawData).T 
+        self.Wl = np.array([380, 440, 500, 675, 870], dtype=np.float64)
+        self.WlLog = np.log(self.Wl)        
+        self.duration = self.RawData[0,-1] - self.RawData[0,0]
+        self._cachIdxAfter = -1
+
+
+    def _time2IdxAfter(self, tps):
+        tps_mod = np.fmod(tps, self.duration)
+        #tps_mod += self.RawData[0,0]
+        aidxTps = np.where(np.logical_and(self.RawData[0]> tps_mod, 
+                                          self.RawData[0]< tps_mod+3))[0]
+        return tps_mod, aidxTps[0]
+
+        
+    def interpolONeil(self, idx):
+        yLog = np.log(self.RawData[3:8, idx])
+        coef = np.polyfit(self.WlLog, yLog, 2)
+        if S_PlotLevel >=3:
+            plt.figure()
+            plt.title("fit log/log")
+            plt.plot(self.WlLog, yLog, "*")
+            xfin = np.linspace(np.log(300), np.log(1100), 1000)
+            p2 = np.poly1d(coef)
+            yfin = p2(xfin)
+            plt.plot(xfin, yfin)
+            plt.grid()
+            plt.figure()
+            plt.title("fit transmission")
+            plt.plot(self.Wl, np.exp(-np.exp(yLog)), "*")
+            print self.RawData[3:8, idx]
+            print yfin 
+            plt.plot(np.exp(xfin), np.exp(-np.exp(yfin)))
+            plt.ylim(0.8, 1)
+            plt.grid()
+        return coef
+        
+    
+    def interpolONeilInTime(self, tps, wl):
+        """
+        lineary interpolation between two set of O'Neil model coefficient
+        
+        return: transmission interpoled
+        """
+        tps_mod, idxAfter  = self._time2IdxAfter(tps)
+        idxBefore = idxAfter - 1
+        tpsBefore = self.RawData[0][idxBefore]
+        tpsAfter = self.RawData[0][idxAfter]    
+        coef1 = self.interpolONeil(idxBefore)
+        coef2 = self.interpolONeil(idxAfter)
+        # linear interpolation
+        dem = (tpsAfter - tpsBefore)
+        c1 = (tpsAfter - tps_mod)/dem
+        c2 = (tps_mod - tpsBefore)/dem        
+        coef = c1*coef1 + c2*coef2
+        xfin = np.log(wl)
+        p2 = np.poly1d(coef)
+        yfin = p2(xfin) 
+        TransInterpol = np.exp(-np.exp(yfin))
+        if S_PlotLevel >=2:
+            yObs1 = np.exp(-self.RawData[3:8, idxBefore])
+            yObs2 = np.exp(-self.RawData[3:8, idxAfter])
+            #plt.figure()
+            plt.plot(self.Wl, yObs1, "*")
+            plt.plot(self.Wl, yObs2, ".")
+            plt.plot(wl, TransInterpol)
+            plt.ylim(0.8, 1)
+            plt.legend(["data %.2f"%tpsBefore,
+                        "data %.2f"%tpsAfter,
+                        "interpol O'Neil %.2f"%tps_mod] , loc=4)
+            plt.grid()        
+        return TransInterpol
+
+
+    def interpolONeilInTimeCache(self, tps, wl):
+        """
+        return : transmission with O'Neil model
+        """
+        tps_mod, idxAfter  = self._time2IdxAfter(tps)
+        idxBefore = idxAfter - 1
+        tpsBefore = self.RawData[0][idxBefore]
+        tpsAfter = self.RawData[0][idxAfter]            
+        if self._cachIdxAfter != idxAfter:            
+            self._coef1 = self.interpolONeil(idxBefore)
+            self._coef2 = self.interpolONeil(idxAfter)
+            self._cachIdxAfter = idxAfter
+            self._cachexfin = np.log(wl)
+        # linear interpolation
+        dem = (tpsAfter - tpsBefore)
+        c1 = (tpsAfter - tps_mod)/dem
+        c2 = (tps_mod - tpsBefore)/dem        
+        coef = c1*self._coef1 + c2*self._coef2        
+        p2 = np.poly1d(coef)
+        yfin = p2(self._cachexfin) 
+        interpol = np.exp(-np.exp(yfin))
+        if S_PlotLevel >=2:
+            yObs1 = np.exp(-self.RawData[3:8, idxBefore])
+            yObs2 = np.exp(-self.RawData[3:8, idxAfter])
+            #plt.figure()
+            plt.plot(self.Wl, yObs1, "*")            
+            plt.plot(wl, interpol)
+            plt.plot(self.Wl, yObs2, ".")
+            plt.ylim(0.8, 1)
+            plt.legend(["data   %.2f"%tpsBefore,                        
+                        "O'Neil %.2f"%tps_mod , 
+                        "data   %.2f"%tpsAfter],loc=4)
+            plt.grid()        
+        return interpol
+        
+        
+    def interpolSplineInTime(self, tps, wl):        
+        tps_mod, idxAfter  = self._time2IdxAfter(tps)
+        idxBefore = idxAfter - 1
+        tpsBefore = self.RawData[0][idxBefore]
+        tpsAfter = self.RawData[0][idxAfter]
+        # fit before
+        xObs = self.Wl
+        yObs1 = np.exp(-self.RawData[3:8, idxBefore])
+        tck1 = spi.splrep(xObs, yObs1, k=2, t=np.array([580]))       
+        # fit after
+        yObs2 = np.exp(-self.RawData[3:8, idxAfter])
+        tck2 = spi.splrep(xObs, yObs2, k=2, t=np.array([580]))
+        # linear interpolation
+        dem = (tpsAfter - tpsBefore)
+        c1 = (tpsAfter - tps_mod)/dem
+        c2 = (tps_mod - tpsBefore)/dem        
+        coef = c1*tck1[1] + c2*tck2[1]  
+        tck = (tck1[0], coef, tck1[2])
+        print tck[1]    
+        interpol = spi.splev(wl, tck)
+        if S_PlotLevel >=1:
+            plt.figure()
+            plt.plot(xObs, yObs1, "*")
+            plt.plot(xObs, yObs2, "*")
+            plt.plot(wl, interpol)
+            plt.ylim(0.8, 1)
+            plt.legend(["data %.2f"%tpsBefore,
+                        "data %.2f"%tpsAfter,
+                        "interpolSplineInTime %.2f"%tps_mod] , loc="best")
+            plt.grid()
+            # plot B-spline basis
+            if False:
+                for Li in range(len(tck1[0])):
+                    plt.figure()
+                    legend = []
+                    coef = np.zeros(len(tck1[0]))
+                    coef[Li] = 1.0
+                    tck = (tck1[0], coef, tck1[2])
+                    plt.plot(wl, spi.splev(wl, tck))
+                    legend.append("B-spline %d"%Li)
+                    plt.grid()      
+                    plt.legend(legend, loc="best")
+                plt.figure()
+                legend = [] 
+                total = np.zeros(len(wl), dtype=np.float64)                   
+                for Li in range(4):
+                    coef = np.zeros(len(tck1[0]))
+                    coef[Li] = 1.0
+                    tck = (tck1[0], coef, tck1[2])
+                    val = spi.splev(wl, tck)
+                    plt.plot(wl, val)
+                    total += val
+                    legend.append("B-spline %d"%Li)
+                plt.plot(wl, total)
+                legend.append("sum B-spline")
+                plt.grid()      
+                plt.legend(legend, loc="best")                      
+        return interpol
+    
+    
+    def getFileRawData(self):
+        return self.FileRawData.split("/")[-1]
+         
+         
+    def plotHistoAM(self):
+        plt.figure()
+        plt.title(self.FileRawData)
+        plt.hist(self.RawData[2])
+        
+        
+    def plotAM(self):
+        plt.figure()
+        plt.title(self.FileRawData)
+        plt.plot(self.RawData[0], self.RawData[2])
+        #
+        plt.figure()
+        plt.title("col 1")
+        plt.plot(self.RawData[1])
+        #
+        plt.figure()
+        plt.title("col 0")
+        plt.plot(self.RawData[0])
+
+
+    def plotFMF(self):
+        plt.figure()
+        plt.title("FMF")
+        plt.plot(self.RawData[0], self.RawData[9])
+    
+    
+    def plotTransmission(self, idx):
+        plt.figure()
+        plt.title('time '+str(self.RawData[0, idx]))
+        plt.plot(self.Wl, np.exp(-self.RawData[3:8, idx]), '*')
+        plt.ylim(0.7,1)
+        plt.grid()
+        
+
+
 class SimuAeroStruct(object):
     def __init__(self, pNameFile=None):
+        """
+        file format
+          ang_e : angstrom exposant
+          fmf   : fine mode fraction
+          0     1      2       3        4      5     6         7      8      9
+        mjds, mjdy, airmass, aer380, aer440, aer500, aer675, aer870, ang_e, fmf
+       
+        """
         if pNameFile != None:
             self.loadSimu(pNameFile)
             return        
@@ -505,7 +734,6 @@ class SimuAeroStruct(object):
         #self.FileRawData = S_mauna
         self.FileRawData = S_casleo
         self.RawData = np.loadtxt(self.FileRawData).T
-        return 
         # ang_e : angstrom exposant
         # fmf   : fine mode fraction
         # 0     1      2       3        4      5     6         7      8      9
